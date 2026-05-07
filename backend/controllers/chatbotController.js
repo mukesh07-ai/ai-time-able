@@ -34,12 +34,14 @@ const ask = async (req, res, next) => {
     const institutionName = institution ? institution.name : 'Your School';
     const slotTimings = ragData.slotTimings || [];
 
-    // Check API key is configured (accepts sk-ant-... or JWT proxy keys)
+    // Check API key
     const apiKey = process.env.ANTHROPIC_API_KEY;
     const isKeyMissing = !apiKey || apiKey.includes('your-key-here') || apiKey.length < 20;
     if (isKeyMissing) {
+      // Format the database context into a clean English answer without AI
+      const dbAnswer = formatDbAnswerEnglish(question, ragData, context);
       return res.json({
-        answer: `**Note: AI assistant not configured** (add ANTHROPIC_API_KEY to .env)\n\nHere is what I found in the database based on your question:\n\n${context || 'No data found for this query.'}`,
+        answer: dbAnswer,
         intent: ragData.intent,
         sources: ragData.summary,
         timetableId: activeTimetableId,
@@ -56,19 +58,20 @@ const ask = async (req, res, next) => {
         institution ? institution.working_days : 5
       );
     } catch (aiErr) {
-      // Anthropic auth error (invalid key) — return fallback, don't crash
       const isAuthErr = aiErr.status === 401 || aiErr.status === 403
         || (aiErr.message && aiErr.message.toLowerCase().includes('auth'));
       if (isAuthErr) {
+        // Return database data in clean English format
+        const dbAnswer = formatDbAnswerEnglish(question, ragData, context);
         return res.json({
-          answer: `**AI key error:** ${aiErr.message}\n\nRaw data from database:\n\n${context || 'No data found.'}`,
+          answer: dbAnswer,
           intent: ragData.intent,
           sources: ragData.summary,
           timetableId: activeTimetableId,
           _noAI: true,
         });
       }
-      throw aiErr; // re-throw unexpected errors
+      throw aiErr;
     }
 
     res.json({
@@ -79,6 +82,60 @@ const ask = async (req, res, next) => {
     });
   } catch (err) { next(err); }
 };
+
+/**
+ * Format database results into a clean English response (used when AI key is not configured)
+ */
+function formatDbAnswerEnglish(question, ragData, rawContext) {
+  const intent = ragData.intent;
+  const summary = ragData.summary || {};
+
+  if (!rawContext || rawContext.trim() === '') {
+    return `I searched the database but couldn't find any data related to your question: **"${question}"**\n\nThis may be because:\n- No timetable has been generated yet\n- The teacher/room/subject you mentioned doesn't exist\n\nTry generating a timetable first from the **Generate** section.`;
+  }
+
+  let intro = '';
+  switch (intent) {
+    case 'TEACHER_SCHEDULE':
+      intro = summary.teacherName
+        ? `Here is the schedule information for **${summary.teacherName}**:\n\n`
+        : `Here is the teacher schedule data I found:\n\n`;
+      break;
+    case 'ROOM_QUERY':
+      intro = summary.roomName
+        ? `Here is the room information for **${summary.roomName}**:\n\n`
+        : `Here is the room data I found:\n\n`;
+      break;
+    case 'CLASS_SCHEDULE':
+      intro = summary.groupName
+        ? `Here is the schedule for student group **${summary.groupName}**:\n\n`
+        : `Here is the class schedule data I found:\n\n`;
+      break;
+    case 'SUBJECT_QUERY':
+      intro = summary.subjectName
+        ? `Here is the information for subject **${summary.subjectName}**:\n\n`
+        : `Here is the subject data I found:\n\n`;
+      break;
+    case 'FREE_PERIOD':
+      intro = `Here is the teacher availability information:\n\n`;
+      break;
+    case 'CONFLICT_QUERY':
+      intro = `Here is the conflict report for the current timetable:\n\n`;
+      break;
+    case 'GENERAL':
+      intro = `Here is an overview of your institution's scheduling data:\n\n`;
+      break;
+    default:
+      intro = `Here is what I found in the database:\n\n`;
+  }
+
+  // Convert raw context to clean formatted markdown
+  const formatted = rawContext
+    .replace(/^([A-Z ]+:)/gm, '**$1**')
+    .trim();
+
+  return `${intro}\`\`\`\n${formatted}\n\`\`\`\n\n> *Note: For AI-powered natural language answers, configure the ANTHROPIC_API_KEY in your backend .env file.*`;
+}
 
 /**
  * POST /chatbot/suggest-improvements
@@ -144,32 +201,25 @@ const getQuickQuestions = async (req, res, next) => {
 
     const teachers = await Teacher.findAll({ where: { institution_id: instId, is_active: true }, limit: 5, order: [['name', 'ASC']] });
     const rooms = await Room.findAll({ where: { institution_id: instId, is_available: true }, limit: 3, order: [['name', 'ASC']] });
-    const subjects = await Subject.findAll({ where: { institution_id: instId, is_active: true }, limit: 3, order: [['name', 'ASC']] });
+    const subjects = await Subject.findAll({ where: { institution_id: instId }, limit: 3, order: [['name', 'ASC']] });
 
     const dynamic = [];
-    if (teachers[0]) dynamic.push(`${teachers[0].name.split(' ').pop()} Sir ka aaj ka schedule kya hai?`);
-    if (teachers[1]) dynamic.push(`${teachers[1].name} ke kitne periods hain is week?`);
-    if (rooms[0]) dynamic.push(`${rooms[0].name} mein kal kya hai?`);
-    if (subjects[0]) dynamic.push(`${subjects[0].name} ke kitne periods hain is week?`);
+    if (teachers[0]) dynamic.push({ icon: '👨‍🏫', category: 'teacher', text: `What is ${teachers[0].name}'s schedule this week?` });
+    if (teachers[1]) dynamic.push({ icon: '👩‍🏫', category: 'teacher', text: `How many periods does ${teachers[1].name} have this week?` });
+    if (rooms[0]) dynamic.push({ icon: '🏫', category: 'room', text: `What is scheduled in ${rooms[0].name} tomorrow?` });
+    if (subjects[0]) dynamic.push({ icon: '📚', category: 'subject', text: `How many periods per week does "${subjects[0].name}" have?` });
 
     const staticQuestions = [
-      { category: 'teacher', icon: '👨🏫', text: 'Sharma Sir ka complete timetable dikhao' },
-      { category: 'teacher', icon: '👩🏫', text: 'Gupta Ma\'am ke kitne periods hain is week?' },
-      { category: 'teacher', icon: '👨🏫', text: 'Kaun sa teacher Monday ko free hai period 3 mein?' },
-      { category: 'room', icon: '🏫', text: 'Room 101 mein kal kya hai?' },
-      { category: 'room', icon: '🔬', text: 'Lab schedule kya hai is week ka?' },
-      { category: 'room', icon: '🏫', text: 'Konsi room Monday ko khali hai?' },
-      { category: 'class', icon: '📚', text: 'Class 10A ka aaj ka schedule?' },
-      { category: 'class', icon: '📖', text: 'Sem 3 ke free periods kab hain?' },
-      { category: 'class', icon: '📚', text: 'Math Class 12 mein kab hai?' },
-      { category: 'general', icon: '⚡', text: 'Koi conflict hai timetable mein?' },
-      { category: 'general', icon: '📊', text: 'Kitne teachers hain total?' },
-      { category: 'general', icon: '🎯', text: 'Konse teachers Friday ko available hain?' },
+      { category: 'teacher', icon: '👨‍🏫', text: 'Which teacher is free on Monday in period 3?' },
+      { category: 'room', icon: '🔬', text: 'What is the lab schedule for this week?' },
+      { category: 'room', icon: '🏫', text: 'Which rooms are empty on Monday?' },
+      { category: 'class', icon: '📖', text: 'When are the free periods for Semester 1?' },
+      { category: 'general', icon: '⚡', text: 'Are there any conflicts in the current timetable?' },
+      { category: 'general', icon: '📊', text: 'How many teachers are registered in the system?' },
+      { category: 'general', icon: '🎯', text: 'Which teachers are available on Friday?' },
     ];
 
-    const dynamicFormatted = dynamic.map(text => ({ category: 'dynamic', icon: '✨', text }));
-
-    res.json({ questions: [...dynamicFormatted, ...staticQuestions] });
+    res.json({ questions: [...dynamic, ...staticQuestions] });
   } catch (err) { next(err); }
 };
 

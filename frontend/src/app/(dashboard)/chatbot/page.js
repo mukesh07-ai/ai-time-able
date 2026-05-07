@@ -1,37 +1,37 @@
 'use client';
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Mic, MicOff, Trash2, Brain, Zap, ChevronRight, Users, BookOpen, Building2 } from 'lucide-react';
+import { Send, Mic, MicOff, Trash2, Zap, ChevronRight, Database, BookOpen, Users, Building2 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { chatbotApi } from '@/lib/api';
+import { chatbotApi, dashboardApi } from '@/lib/api';
 import useAuthStore from '@/lib/auth';
 import ChatMessage from '@/components/chatbot/ChatMessage';
+import { useQuery } from '@tanstack/react-query';
 
-const QUICK_QUESTIONS = [
-  { category: 'teacher', icon: '👨🏫', text: 'Sharma Sir ka complete timetable dikhao' },
-  { category: 'teacher', icon: '👩🏫', text: "Gupta Ma'am ke kitne periods hain is week?" },
-  { category: 'teacher', icon: '👨🏫', text: 'Kaun sa teacher Monday ko free hai period 3 mein?' },
-  { category: 'room', icon: '🏫', text: 'Room 101 mein kal kya hai?' },
-  { category: 'room', icon: '🔬', text: 'Lab schedule kya hai is week ka?' },
-  { category: 'room', icon: '🏫', text: 'Konsi room Monday ko khali hai?' },
-  { category: 'class', icon: '📚', text: 'Class 10A ka aaj ka schedule?' },
-  { category: 'class', icon: '📖', text: 'Sem 3 ke free periods kab hain?' },
-  { category: 'class', icon: '📚', text: 'Math Class 12 mein kab hai?' },
-  { category: 'general', icon: '⚡', text: 'Koi conflict hai timetable mein?' },
-  { category: 'general', icon: '📊', text: 'Kitne teachers hain total?' },
-  { category: 'general', icon: '🎯', text: 'Konse teachers Friday ko available hain?' },
+const DEFAULT_QUESTIONS = [
+  { category: 'teacher', icon: '👨‍🏫', text: "Who is teaching Computer Core 1 this week?" },
+  { category: 'teacher', icon: '👩‍🏫', text: "How many periods does Prof. Core have per week?" },
+  { category: 'teacher', icon: '👨‍🏫', text: "Which teacher is free on Monday in slot 3?" },
+  { category: 'room', icon: '🏫', text: "What is scheduled in Room BC10 tomorrow?" },
+  { category: 'room', icon: '🔬', text: "What is the lab schedule for this week?" },
+  { category: 'room', icon: '🏫', text: "Which rooms are empty on Monday?" },
+  { category: 'class', icon: '📚', text: "What is B.Tech CS - Semester 1 schedule today?" },
+  { category: 'class', icon: '📖', text: "When are the free periods for Semester 3?" },
+  { category: 'general', icon: '⚡', text: "Are there any conflicts in the timetable?" },
+  { category: 'general', icon: '📊', text: "How many teachers are registered in the system?" },
+  { category: 'general', icon: '🎯', text: "Which teachers are available on Friday?" },
 ];
 
 const WELCOME_MESSAGE = {
   role: 'assistant',
-  content: `Namaskar! 🙏 Main **TimetableBot** hoon — aapka AI timetable assistant.
+  content: `Hello! 👋 I'm **TimetableBot** — your AI-powered scheduling assistant.
 
-Aap mujhse koi bhi sawaal pooch sakte hain jaise:
-• "Sharma Sir ka Monday ka schedule kya hai?"
-• "Room 101 mein kal kaun hai?"
-• "Class 10A ke free periods kab hain?"
+You can ask me anything about your institution's timetable, such as:
+• *"Who is teaching B.Tech CS - Semester 1 on Monday?"*
+• *"Which rooms are available on Wednesday at slot 2?"*
+• *"How many periods does Prof. Core have this week?"*
 
-**Hinglish, Hindi, ya English** — jaise chaaho waise poochhho!
+I have live access to your institution's schedule database and can answer questions about teachers, rooms, subjects, and student groups.
 
 *Powered by Claude AI with real-time database access* 🤖`,
   timestamp: new Date().toISOString(),
@@ -44,9 +44,7 @@ export default function ChatbotPage() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const [voiceLang, setVoiceLang] = useState('hi');
-  const [quickQuestions, setQuickQuestions] = useState(QUICK_QUESTIONS);
-  const [dynamicStats, setDynamicStats] = useState(null);
+  const [quickQuestions, setQuickQuestions] = useState(DEFAULT_QUESTIONS);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
   const recognitionRef = useRef(null);
@@ -93,7 +91,7 @@ export default function ChatbotPage() {
     } catch (err) {
       const errorMsg = {
         role: 'assistant',
-        content: 'Maafi chahta hoon, abhi kuch technical problem hai. Please thodi der baad try karein. 🙏',
+        content: 'I encountered a technical issue. Please try again in a moment.',
         timestamp: new Date().toISOString(),
         error: true,
       };
@@ -113,7 +111,7 @@ export default function ChatbotPage() {
     if (!SpeechRecognition) { toast.error('Voice not supported in this browser. Use Chrome.'); return; }
 
     const recognition = new SpeechRecognition();
-    recognition.lang = voiceLang === 'hi' ? 'hi-IN' : 'en-IN';
+    recognition.lang = 'en-IN';
     recognition.interimResults = true;
     recognition.continuous = false;
 
@@ -128,34 +126,24 @@ export default function ChatbotPage() {
     };
     recognition.onerror = () => { setIsListening(false); toast.error('Voice recognition failed. Please type instead.'); };
     recognition.onend = () => setIsListening(false);
-
     recognitionRef.current = recognition;
     recognition.start();
   };
 
-  const stopVoice = () => {
-    recognitionRef.current?.stop();
-    setIsListening(false);
-  };
-
-  const clearChat = () => {
-    setMessages([WELCOME_MESSAGE]);
-    toast.success('Chat cleared');
-  };
+  const stopVoice = () => { recognitionRef.current?.stop(); setIsListening(false); };
+  const clearChat = () => { setMessages([WELCOME_MESSAGE]); toast.success('Chat cleared'); };
 
   return (
     <div className="flex h-[calc(100vh-7rem)] gap-4">
       {/* LEFT: Quick Questions Panel */}
       <div className="w-72 flex-shrink-0 flex flex-col gap-3 overflow-hidden">
-        {/* Header */}
         <div className="card p-4">
           <h3 className="font-outfit font-semibold text-text-primary text-sm flex items-center gap-2">
-            🎯 <span>Try these questions</span>
+            🎯 <span>Suggested Questions</span>
           </h3>
         </div>
 
-        {/* Questions */}
-        <div className="flex-1 overflow-y-auto space-y-1.5 pr-1">
+        <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar">
           {quickQuestions.slice(0, 12).map((q, i) => (
             <motion.button key={i} whileHover={{ x: 3 }} whileTap={{ scale: 0.98 }}
               onClick={() => { setInput(q.text); sendMessage(q.text); }}
@@ -169,21 +157,26 @@ export default function ChatbotPage() {
           ))}
         </div>
 
-        {/* Stats mini panel */}
-        <div className="card p-3">
-          <div className="text-xs text-text-secondary mb-2 font-medium">Institution Stats</div>
-          <div className="space-y-1.5">
+        {/* Stats panel */}
+        <div className="card p-4 space-y-3">
+          <div className="text-[10px] font-bold text-text-secondary uppercase tracking-widest">Live Database</div>
+          <div className="space-y-2">
             {[
-              { icon: '👨🏫', label: 'Teachers', count: '—' },
-              { icon: '📚', label: 'Subjects', count: '—' },
-              { icon: '🏫', label: 'Rooms', count: '—' },
+              { icon: <Users className="w-3.5 h-3.5" />, label: 'Teachers', color: 'text-primary' },
+              { icon: <BookOpen className="w-3.5 h-3.5" />, label: 'Subjects', color: 'text-warning' },
+              { icon: <Building2 className="w-3.5 h-3.5" />, label: 'Departments', color: 'text-success' },
             ].map(item => (
-              <div key={item.label} className="flex items-center gap-2">
-                <span className="text-sm">{item.icon}</span>
-                <span className="text-xs text-text-secondary flex-1">{item.label}</span>
-                <span className="text-xs font-medium text-text-primary">{item.count}</span>
+              <div key={item.label} className={`flex items-center gap-2 text-xs ${item.color}`}>
+                {item.icon}
+                <span className="text-text-secondary flex-1">{item.label}</span>
+                <div className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
               </div>
             ))}
+          </div>
+          <div className="pt-1 border-t border-border/50">
+            <span className="text-[9px] text-text-secondary font-bold uppercase tracking-widest flex items-center gap-1">
+              <Database className="w-3 h-3" /> RAG-enabled • Live queries
+            </span>
           </div>
         </div>
       </div>
@@ -200,39 +193,26 @@ export default function ChatbotPage() {
             <div className="font-outfit font-bold text-text-primary">TimetableBot</div>
             <div className="text-xs text-purple flex items-center gap-1">
               <Zap className="w-3 h-3" />
-              Powered by Claude AI • RAG enabled
+              Powered by Claude AI • RAG enabled • English
             </div>
           </div>
-
-          {/* Controls */}
-          <div className="flex items-center gap-2">
-            <div className="flex items-center bg-elevated rounded-lg border border-border overflow-hidden">
-              {['hi', 'en'].map(lang => (
-                <button key={lang} onClick={() => setVoiceLang(lang)}
-                  className={`px-3 py-1.5 text-xs font-medium transition-colors ${voiceLang === lang ? 'bg-primary/20 text-primary' : 'text-text-secondary hover:text-text-primary'}`}>
-                  {lang === 'hi' ? '🇮🇳 HI' : '🇺🇸 EN'}
-                </button>
-              ))}
-            </div>
-            <button onClick={clearChat} className="p-2 rounded-lg hover:bg-elevated text-text-secondary hover:text-danger transition-colors" title="Clear chat">
-              <Trash2 className="w-4 h-4" />
-            </button>
-          </div>
+          <button onClick={clearChat} className="p-2 rounded-lg hover:bg-elevated text-text-secondary hover:text-danger transition-colors" title="Clear chat">
+            <Trash2 className="w-4 h-4" />
+          </button>
         </div>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
           <AnimatePresence>
             {messages.map((msg, i) => (
               <ChatMessage key={i} message={msg} />
             ))}
           </AnimatePresence>
 
-          {/* Typing indicator */}
           {isLoading && (
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-full ai-orb flex-shrink-0" />
-              <div className="card px-4 py-3 inline-flex items-center gap-1">
+              <div className="card px-4 py-3 inline-flex items-center gap-1.5">
                 <div className="typing-dot w-2 h-2 bg-primary rounded-full" />
                 <div className="typing-dot w-2 h-2 bg-primary rounded-full" />
                 <div className="typing-dot w-2 h-2 bg-primary rounded-full" />
@@ -252,7 +232,6 @@ export default function ChatbotPage() {
                 ))}
               </div>
               <span className="text-xs text-danger font-medium">Listening... speak now</span>
-              <span className="text-xs text-text-secondary ml-auto">{voiceLang === 'hi' ? 'Hindi mode' : 'English mode'}</span>
             </motion.div>
           )}
 
@@ -263,7 +242,7 @@ export default function ChatbotPage() {
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Koi bhi sawaal poochhein... (Type in Hindi or English)"
+                placeholder="Ask anything about your timetable, teachers, rooms, or subjects..."
                 rows={1}
                 className="input-field resize-none min-h-[44px] max-h-28"
                 style={{ height: 'auto' }}

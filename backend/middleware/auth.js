@@ -1,7 +1,7 @@
 const jwt = require('jsonwebtoken');
 const { User } = require('../models');
 
-module.exports = async (req, res, next) => {
+const protect = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -18,3 +18,21 @@ module.exports = async (req, res, next) => {
     return res.status(401).json({ error: 'Invalid token' });
   }
 };
+
+const adminOnly = (req, res, next) => {
+  if (req.user && req.user.role === 'admin') {
+    next();
+  } else {
+    res.status(403).json({ error: 'Admin access required' });
+  }
+};
+
+const teacherOrAdmin = (req, res, next) => {
+  if (req.user && (req.user.role === 'admin' || req.user.role === 'teacher')) {
+    next();
+  } else {
+    res.status(403).json({ error: 'Teacher or Admin access required' });
+  }
+};
+
+module.exports = { protect, adminOnly, teacherOrAdmin };

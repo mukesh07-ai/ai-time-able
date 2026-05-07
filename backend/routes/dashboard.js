@@ -1,10 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const auth = require('../middleware/auth');
+const { protect } = require('../middleware/auth');
 const { Teacher, Subject, Room, Timetable, ConflictLog } = require('../models');
 
 // Dashboard stats
-router.get('/stats', auth, async (req, res, next) => {
+router.get('/stats', protect, async (req, res, next) => {
   try {
     const instId = req.user.institution_id;
     const [teachers, subjects, rooms, timetables, conflicts] = await Promise.all([

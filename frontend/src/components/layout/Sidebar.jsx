@@ -4,18 +4,30 @@ import { usePathname, useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import {
   LayoutDashboard, Settings2, Upload, Sparkles, MessageSquare,
-  CalendarDays, Brain, LogOut, BookOpen,
+  CalendarDays, Brain, LogOut, BookOpen, Users, Building, CalendarClock, UserCheck
 } from 'lucide-react';
 import useAuthStore from '@/lib/auth';
 
-const NAV_ITEMS = [
-  { href: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { href: '/constraints', icon: Settings2, label: 'Teachers & Rooms' },
-  { href: '/subjects', icon: BookOpen, label: 'Subjects' },
-  { href: '/upload', icon: Upload, label: 'Upload Data' },
-  { href: '/generate', icon: Sparkles, label: 'Generate' },
-  { href: '/chatbot', icon: MessageSquare, label: 'AI Chatbot', highlight: true },
-  { href: '/timetable', icon: CalendarDays, label: 'View Timetable' },
+const ADMIN_NAV = [
+  { href: '/dashboard',       icon: LayoutDashboard, label: 'Dashboard' },
+  { href: '/constraints',     icon: Settings2,       label: 'Teachers & Rooms' },
+  { href: '/departments',     icon: Building,        label: 'Departments' },
+  { href: '/subjects',        icon: BookOpen,        label: 'Subjects' },
+  { href: '/upload',          icon: Upload,          label: 'Upload Data' },
+  { href: '/generate',        icon: Sparkles,        label: 'Generate' },
+  { href: '/timetable',       icon: CalendarDays,    label: 'View Timetable' },
+  { href: '/leaves',          icon: CalendarClock,   label: 'Leave Management' },
+  { href: '/chatbot',         icon: MessageSquare,   label: 'AI Chatbot', highlight: true },
+];
+
+const TEACHER_NAV = [
+  { href: '/teacher-portal',  icon: UserCheck,       label: 'My Portal' },
+  { href: '/chatbot',         icon: MessageSquare,   label: 'AI Chatbot', highlight: true },
+];
+
+const STUDENT_NAV = [
+  { href: '/timetable',       icon: CalendarDays,    label: 'Timetable' },
+  { href: '/chatbot',         icon: MessageSquare,   label: 'AI Chatbot', highlight: true },
 ];
 
 export default function Sidebar() {
@@ -23,10 +35,11 @@ export default function Sidebar() {
   const router = useRouter();
   const { user, institution, logout } = useAuthStore();
 
-  const handleLogout = () => {
-    logout();
-    router.push('/login');
-  };
+  const handleLogout = () => { logout(); router.push('/login'); };
+
+  const navItems = user?.role === 'teacher' ? TEACHER_NAV
+                 : user?.role === 'student' ? STUDENT_NAV
+                 : ADMIN_NAV;
 
   return (
     <div className="fixed left-0 top-0 h-full w-[220px] bg-[#0C1020] border-r border-border flex flex-col z-40">
@@ -46,14 +59,23 @@ export default function Sidebar() {
       {/* Institution badge */}
       {institution && (
         <div className="px-3 py-2 border-b border-border">
-          <div className="text-[10px] text-text-secondary uppercase tracking-wide mb-1">Institution</div>
+          <div className="text-[10px] text-text-secondary uppercase tracking-wide mb-1">University / College</div>
           <div className="text-xs text-text-primary font-medium truncate">{institution.name}</div>
+        </div>
+      )}
+
+      {/* Role badge for non-admin */}
+      {user?.role && user.role !== 'admin' && (
+        <div className="px-3 py-1.5 border-b border-border">
+          <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full border ${user.role === 'teacher' ? 'bg-primary/10 text-primary border-primary/25' : 'bg-purple/10 text-purple border-purple/25'}`}>
+            {user.role} account
+          </span>
         </div>
       )}
 
       {/* Navigation */}
       <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-        {NAV_ITEMS.map((item) => {
+        {navItems.map((item) => {
           const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href));
           return (
             <Link key={item.href} href={item.href}>
@@ -67,9 +89,7 @@ export default function Sidebar() {
                     : 'text-text-secondary hover:bg-white/4 hover:text-text-primary'
                 }`}
               >
-                {isActive && (
-                  <div className="absolute inset-0 bg-primary/5 rounded-xl" />
-                )}
+                {isActive && <div className="absolute inset-0 bg-primary/5 rounded-xl" />}
                 <item.icon className={`w-4 h-4 flex-shrink-0 ${item.highlight && !isActive ? 'text-purple/70' : ''}`} />
                 <span className="text-sm font-medium">{item.label}</span>
                 {item.highlight && !isActive && (
@@ -91,9 +111,16 @@ export default function Sidebar() {
             <div className="text-xs font-medium text-text-primary truncate">{user?.name || 'User'}</div>
             <div className="text-[10px] text-text-secondary capitalize">{user?.role || 'admin'}</div>
           </div>
-          <button onClick={handleLogout} className="text-text-secondary hover:text-danger transition-colors p-1 rounded-lg hover:bg-danger/10" title="Logout">
-            <LogOut className="w-3.5 h-3.5" />
-          </button>
+          <div className="flex items-center gap-1">
+            {user?.role === 'admin' && (
+              <Link href="/users" className="text-text-secondary hover:text-primary transition-colors p-1.5 rounded-lg hover:bg-primary/10" title="User Management">
+                <Users className="w-3.5 h-3.5" />
+              </Link>
+            )}
+            <button onClick={handleLogout} className="text-text-secondary hover:text-danger transition-colors p-1.5 rounded-lg hover:bg-danger/10" title="Logout">
+              <LogOut className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
       </div>
     </div>

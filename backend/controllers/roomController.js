@@ -3,7 +3,7 @@ const { Op } = require('sequelize');
 
 const getAll = async (req, res, next) => {
   try {
-    const { page = 1, limit = 50, room_type } = req.query;
+    const { page = 1, limit = 2000, room_type } = req.query;
     const where = { institution_id: req.user.institution_id };
     if (room_type) where.room_type = room_type;
 
@@ -42,8 +42,8 @@ const remove = async (req, res, next) => {
   try {
     const room = await Room.findOne({ where: { id: req.params.id, institution_id: req.user.institution_id } });
     if (!room) return res.status(404).json({ error: 'Room not found' });
-    await room.update({ is_available: false });
-    res.json({ message: 'Room marked unavailable' });
+    await room.destroy();
+    res.json({ message: 'Room deleted permanently' });
   } catch (err) { next(err); }
 };
 

@@ -6,11 +6,14 @@ const Subject = sequelize.define('Subject', {
   institution_id: { type: DataTypes.UUID, allowNull: false },
   name: { type: DataTypes.STRING(100), allowNull: false },
   code: { type: DataTypes.STRING(20) },
-  periods_per_week: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 4 },
-  requires_lab: { type: DataTypes.BOOLEAN, defaultValue: false },
-  student_group: { type: DataTypes.STRING(50) },
+  credits: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 3 },
+  type: { type: DataTypes.ENUM('theory', 'lab', 'both'), defaultValue: 'theory' },
+  department_id: { type: DataTypes.UUID, allowNull: true },
+  course_id: { type: DataTypes.UUID, allowNull: true },
+  semester_id: { type: DataTypes.UUID, allowNull: true },
+  teacher_id: { type: DataTypes.UUID, allowNull: true },
+  student_group: { type: DataTypes.STRING(100), allowNull: true },
   color_hex: { type: DataTypes.STRING(7), defaultValue: '#4F8EF7' },
-  is_active: { type: DataTypes.BOOLEAN, defaultValue: true },
 }, { tableName: 'subjects', timestamps: true });
 
 module.exports = Subject;

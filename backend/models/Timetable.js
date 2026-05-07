@@ -6,7 +6,10 @@ const Timetable = sequelize.define('Timetable', {
   institution_id: { type: DataTypes.UUID, allowNull: false },
   name: { type: DataTypes.STRING(200), allowNull: false },
   academic_year: { type: DataTypes.STRING(20) },
-  semester: { type: DataTypes.STRING(20) },
+  department_id: { type: DataTypes.UUID, allowNull: true },
+  course_id: { type: DataTypes.UUID, allowNull: true },
+  semester_id: { type: DataTypes.UUID, allowNull: true },
+  semester: { type: DataTypes.STRING(20) }, // Kept for legacy/text fallback
   status: {
     type: DataTypes.ENUM('draft', 'generating', 'feasible', 'infeasible', 'published'),
     defaultValue: 'draft',

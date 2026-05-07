@@ -393,7 +393,7 @@ async function classifyAndFetch(question, institutionId, activeTimetableId) {
         { model: TeacherAvailability, as: 'availability' },
       ],
     }),
-    Subject.findAll({ where: { institution_id: institutionId, is_active: true } }),
+    Subject.findAll({ where: { institution_id: institutionId } }),
     Room.findAll({ where: { institution_id: institutionId, is_available: true } }),
   ]);
 
@@ -509,7 +509,7 @@ async function classifyAndFetch(question, institutionId, activeTimetableId) {
     // GENERAL
     const [teacherCount, subjectCount, roomCount, timetableCount] = await Promise.all([
       Teacher.count({ where: { institution_id: institutionId, is_active: true } }),
-      Subject.count({ where: { institution_id: institutionId, is_active: true } }),
+      Subject.count({ where: { institution_id: institutionId } }),
       Room.count({ where: { institution_id: institutionId, is_available: true } }),
       Timetable.count({ where: { institution_id: institutionId } }),
     ]);

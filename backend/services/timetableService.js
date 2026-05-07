@@ -1,4 +1,5 @@
-const { Teacher, Subject, Room, Timetable, TimetableEntry, ConflictLog, TeacherAvailability, TeacherSubject, Institution } = require('../models');
+const { Teacher, Subject, Room, Timetable, TimetableEntry, ConflictLog, TeacherAvailability, TeacherSubject, Institution, Semester } = require('../models');
+const { Op } = require('sequelize');
 const { runSolver } = require('./solverService');
 const aiService = require('./aiService');
 const { emitToRoom } = require('../config/socket');
@@ -16,48 +17,44 @@ async function generateTimetable(timetableId, institutionId, nlInput, userId) {
   const emit = (event, data) => emitToRoom(timetableId, event, data);
 
   try {
-    // Update status to generating
     await Timetable.update({ status: 'generating' }, { where: { id: timetableId } });
-    emit('step', { step: 1, message: 'Timetable generation shuru ho rahi hai...', progress: 5 });
+    emit('step', { step: 1, message: 'Initializing generation engine...', progress: 5 });
 
-    // Step 1: Parse natural language input if provided
+    // Step 1: Parse NL if provided
     let parsedNL = null;
     if (nlInput && nlInput.trim()) {
-      emit('step', { step: 1, message: 'AI se input parse ho raha hai...', progress: 10 });
+      emit('step', { step: 1, message: 'Parsing AI constraints...', progress: 10 });
       const existingData = await loadExistingData(institutionId);
       parsedNL = await aiService.parseNaturalLanguage(nlInput, existingData);
-      
-      // Apply parsed updates
       await applyParsedUpdates(parsedNL, institutionId);
       emit('nlp_done', { parsed: parsedNL });
     }
 
-    // Step 2: Load solver config
-    emit('step', { step: 2, message: 'Scheduling data load ho raha hai...', progress: 25 });
-    const config = await buildSolverConfig(institutionId);
+    // Step 2: Build solver config filtered by timetable's hierarchy
+    emit('step', { step: 2, message: 'Loading targeted schedule data...', progress: 25 });
+    const config = await buildSolverConfig(institutionId, timetableId);
+
+    console.log(`[Generator] Timetable ${timetableId}: ${config.subjects.length} subjects, ${config.teachers.length} teachers, ${config.rooms.length} rooms`);
 
     if (config.subjects.length === 0) {
-      throw new Error('No active subjects found. Please add subjects first.');
+      throw new Error('No subjects found for the selected Department/Course/Semester. Please ensure subjects are registered for this combination.');
     }
     if (config.teachers.length === 0) {
-      throw new Error('No active teachers found. Please add teachers first.');
+      throw new Error('No teachers are assigned to the subjects in this Semester. Please assign teachers via Constraints.');
     }
     if (config.rooms.length === 0) {
-      throw new Error('No available rooms found. Please add rooms first.');
+      throw new Error('No rooms available. Please add rooms first.');
     }
 
-    // Step 3: Run CP-SAT solver
-    emit('step', { step: 3, message: 'AI solver timetable bana raha hai (OR-Tools CP-SAT)...', progress: 40 });
+    // Step 3: Run solver
+    emit('step', { step: 3, message: `Running CP-SAT solver for ${config.subjects.length} subjects...`, progress: 40 });
     const solverResult = await runSolver(config);
 
     if (solverResult.status === 'FEASIBLE' || solverResult.status === 'OPTIMAL') {
-      // Step 4: Save entries
-      emit('step', { step: 4, message: 'Timetable save ho raha hai...', progress: 75 });
-      
-      // Clear existing entries
+      emit('step', { step: 4, message: 'Saving schedule entries...', progress: 75 });
+
       await TimetableEntry.destroy({ where: { timetable_id: timetableId } });
-      
-      // Bulk insert
+
       const entriesToInsert = solverResult.entries.map(e => ({
         timetable_id: timetableId,
         teacher_id: e.teacher_id,
@@ -71,17 +68,16 @@ async function generateTimetable(timetableId, institutionId, nlInput, userId) {
 
       await TimetableEntry.bulkCreate(entriesToInsert, { ignoreDuplicates: true });
 
-      // Update timetable status
       await Timetable.update({
         status: 'feasible',
         solver_time_ms: solverResult.stats ? solverResult.stats.time_ms : 0,
-        generation_log: { solver_stats: solverResult.stats, entries_count: entriesToInsert.length, nl_parsed: parsedNL },
+        generation_log: { solver_stats: solverResult.stats, entries_count: entriesToInsert.length },
       }, { where: { id: timetableId } });
 
-      emit('step', { step: 5, message: 'Timetable taiyar hai! ✅', progress: 90 });
+      emit('step', { step: 5, message: `Done! ${entriesToInsert.length} sessions scheduled ✅`, progress: 95 });
       emit('timetable_ready', { timetableId, entriesCount: entriesToInsert.length, stats: solverResult.stats });
 
-      // Non-blocking: generate improvement suggestions
+      // Non-blocking: AI improvements
       setImmediate(async () => {
         try {
           const entries = await TimetableEntry.findAll({
@@ -93,7 +89,6 @@ async function generateTimetable(timetableId, institutionId, nlInput, userId) {
             ],
             limit: 100,
           });
-          const timetableData = { entries, config };
           const institution = await Institution.findByPk(institutionId);
           const suggestions = await aiService.suggestImprovements(
             { entries: entries.map(e => ({ day: e.day_of_week, slot: e.slot_number, teacher: e.teacher?.name, subject: e.subject?.name, room: e.room?.name, group: e.student_group })) },
@@ -108,18 +103,16 @@ async function generateTimetable(timetableId, institutionId, nlInput, userId) {
       return { success: true, timetableId };
 
     } else {
-      // INFEASIBLE
-      emit('step', { step: 4, message: 'Conflict detect kiya gaya...', progress: 70 });
-      
+      emit('step', { step: 4, message: 'Conflict detected, analyzing...', progress: 70 });
+
       const conflicts = solverResult.violations || [];
       let explanation;
       try {
         explanation = await aiService.explainConflict(conflicts, config);
       } catch (e) {
-        explanation = { root_cause: 'Constraints cannot be satisfied', explanation: 'Too many constraints conflict.', fixes: [] };
+        explanation = { root_cause: 'Constraints conflict', explanation: conflicts.map(c => c.message).join('; ') || 'Schedule is infeasible.', fixes: [] };
       }
 
-      // Save conflict log
       await ConflictLog.destroy({ where: { timetable_id: timetableId } });
       await ConflictLog.create({
         timetable_id: timetableId,
@@ -139,6 +132,7 @@ async function generateTimetable(timetableId, institutionId, nlInput, userId) {
     }
 
   } catch (err) {
+    console.error(`[Generator] Error for timetable ${timetableId}:`, err.message);
     await Timetable.update({ status: 'draft', generation_log: { error: err.message } }, { where: { id: timetableId } });
     emit('error', { message: err.message });
     throw err;
@@ -151,7 +145,7 @@ async function generateTimetable(timetableId, institutionId, nlInput, userId) {
 async function loadExistingData(institutionId) {
   const [teachers, subjects, rooms] = await Promise.all([
     Teacher.findAll({ where: { institution_id: institutionId, is_active: true }, limit: 50 }),
-    Subject.findAll({ where: { institution_id: institutionId, is_active: true }, limit: 50 }),
+    Subject.findAll({ where: { institution_id: institutionId }, limit: 50 }),
     Room.findAll({ where: { institution_id: institutionId, is_available: true }, limit: 30 }),
   ]);
   return {
@@ -166,14 +160,12 @@ async function loadExistingData(institutionId) {
  */
 async function applyParsedUpdates(parsed, institutionId) {
   if (!parsed || !parsed.updates) return;
-
   const { teacher_availability_changes, subject_requirements } = parsed.updates;
 
-  // Apply teacher availability changes
   if (teacher_availability_changes && teacher_availability_changes.length > 0) {
     for (const change of teacher_availability_changes) {
       const teacher = await Teacher.findOne({
-        where: { institution_id: institutionId, name: { [require('sequelize').Op.like]: `%${change.teacher_name}%` } },
+        where: { institution_id: institutionId, name: { [Op.like]: `%${change.teacher_name}%` } },
       });
       if (teacher) {
         for (const slot of (change.slots || [])) {
@@ -188,14 +180,10 @@ async function applyParsedUpdates(parsed, institutionId) {
     }
   }
 
-  // Apply subject requirements
   if (subject_requirements && subject_requirements.length > 0) {
     for (const req of subject_requirements) {
       const subject = await Subject.findOne({
-        where: {
-          institution_id: institutionId,
-          name: { [require('sequelize').Op.like]: `%${req.subject_name}%` },
-        },
+        where: { institution_id: institutionId, name: { [Op.like]: `%${req.subject_name}%` } },
       });
       if (subject) {
         const updates = {};
@@ -208,34 +196,85 @@ async function applyParsedUpdates(parsed, institutionId) {
 }
 
 /**
- * Build solver config from DB
+ * Build solver config from DB — filtered to the timetable's specific hierarchy
  */
-async function buildSolverConfig(institutionId) {
+async function buildSolverConfig(institutionId, timetableId) {
   const institution = await Institution.findByPk(institutionId);
+  const timetable = await Timetable.findByPk(timetableId);
 
-  const teachers = await Teacher.findAll({
-    where: { institution_id: institutionId, is_active: true },
-    include: [
-      { model: TeacherAvailability, as: 'availability' },
-      { model: Subject, as: 'subjects', through: { attributes: [] } },
-    ],
-  });
+  if (!timetable) throw new Error('Timetable not found');
 
-  const subjects = await Subject.findAll({
-    where: { institution_id: institutionId, is_active: true },
-  });
+  // ── 1. Filter subjects by semester > course > department (most specific wins) ──
+  const whereSubject = { institution_id: institutionId };
+  let resolvedScope = { semester_id: timetable.semester_id, course_id: timetable.course_id, department_id: timetable.department_id };
 
+  if (timetable.semester_id) {
+    whereSubject.semester_id = timetable.semester_id;
+  } else if (timetable.course_id) {
+    whereSubject.course_id = timetable.course_id;
+  } else if (timetable.department_id) {
+    whereSubject.department_id = timetable.department_id;
+  } else {
+    // AI Prompt mode: no scope provided — auto-select the first semester that has subjects
+    // This prevents the solver from being overwhelmed with 480+ subjects
+    const firstSubjectWithSem = await Subject.findOne({
+      where: { institution_id: institutionId, semester_id: { [Op.ne]: null } },
+    });
+    if (firstSubjectWithSem?.semester_id) {
+      whereSubject.semester_id = firstSubjectWithSem.semester_id;
+      resolvedScope.semester_id = firstSubjectWithSem.semester_id;
+      // Update the timetable record with the resolved scope
+      await Timetable.update({ semester_id: firstSubjectWithSem.semester_id }, { where: { id: timetableId } });
+      console.log(`[Config] AI Prompt mode — auto-scoped to semester: ${firstSubjectWithSem.semester_id}`);
+    }
+  }
+
+  const subjects = await Subject.findAll({ where: whereSubject });
+  const subjectIds = subjects.map(s => s.id);
+
+  console.log(`[Config] Filter: dept=${timetable.department_id} course=${timetable.course_id} sem=${timetable.semester_id}`);
+  console.log(`[Config] Found ${subjects.length} subjects: ${subjects.map(s => s.name).join(', ')}`);
+
+  // ── 2. Get teachers linked to these subjects via TeacherSubject junction ──
+  let teachers = [];
+  if (subjectIds.length > 0) {
+    // Find teacher IDs from junction table
+    const teacherSubjectLinks = await TeacherSubject.findAll({
+      where: { subject_id: { [Op.in]: subjectIds } },
+    });
+    const teacherIds = [...new Set(teacherSubjectLinks.map(ts => ts.teacher_id))];
+
+    if (teacherIds.length > 0) {
+      teachers = await Teacher.findAll({
+        where: { id: { [Op.in]: teacherIds }, is_active: true },
+        include: [{ model: TeacherAvailability, as: 'availability' }],
+      });
+
+      // Attach their filtered subject_ids (only subjects in this semester)
+      for (const teacher of teachers) {
+        const links = teacherSubjectLinks.filter(ts => ts.teacher_id === teacher.id);
+        teacher._subjectIds = links.map(l => l.subject_id).filter(id => subjectIds.includes(id));
+      }
+    }
+  }
+
+  console.log(`[Config] Found ${teachers.length} teachers for these subjects.`);
+
+  // ── 3. Get dedicated rooms for the semester + institution rooms ──
+  // Start with the semester's dedicated room, then add general rooms
+  const semesterRoom = timetable.semester_id
+    ? await Semester.findByPk(timetable.semester_id, { attributes: ['room_id'] })
+    : null;
+
+  const dedicatedRoomId = semesterRoom?.room_id;
+
+  // Fetch all available rooms for the institution (limit to avoid solver overwhelm)
   const rooms = await Room.findAll({
     where: { institution_id: institutionId, is_available: true },
+    limit: 20,
   });
 
-  // Assign colors to subjects
-  subjects.forEach((s, i) => {
-    if (!s.color_hex || s.color_hex === '#4F8EF7') {
-      s.color_hex = SUBJECT_COLORS[i % SUBJECT_COLORS.length];
-    }
-  });
-
+  // ── 4. Build configs ──
   const teacherConfig = teachers.map(t => {
     const unavailableSlots = t.availability
       ? t.availability.filter(a => !a.is_available).map(a => [a.day_of_week, a.slot_number])
@@ -243,19 +282,21 @@ async function buildSolverConfig(institutionId) {
     return {
       id: t.id,
       name: t.name,
-      subject_ids: t.subjects ? t.subjects.map(s => s.id) : [],
-      max_periods_per_day: t.max_periods_per_day,
-      max_periods_per_week: t.max_periods_per_week,
+      subject_ids: t._subjectIds || [],
+      max_periods_per_day: t.max_periods_per_day || 5,
+      max_periods_per_week: t.max_periods_per_week || 25,
       unavailable_slots: unavailableSlots,
     };
   });
 
-  const subjectConfig = subjects.map(s => ({
+  const subjectConfig = subjects.map((s, i) => ({
     id: s.id,
     name: s.name,
-    periods_per_week: s.periods_per_week,
-    requires_lab: s.requires_lab,
+    periods_per_week: s.credits || 3,
+    requires_lab: s.type === 'lab',
+    dedicated_room_id: dedicatedRoomId || null,
     student_group: s.student_group || 'Default',
+    color_hex: SUBJECT_COLORS[i % SUBJECT_COLORS.length],
   }));
 
   const roomConfig = rooms.map(r => ({
@@ -263,14 +304,14 @@ async function buildSolverConfig(institutionId) {
     name: r.name,
     room_type: r.room_type,
     is_lab: r.room_type === 'lab',
-    capacity: r.capacity,
+    capacity: r.capacity || 40,
   }));
 
   return {
     institution_id: institutionId,
-    working_days: institution.working_days,
-    slots_per_day: institution.slots_per_day,
-    lunch_slot: institution.lunch_slot,
+    working_days: institution.working_days || 5,
+    slots_per_day: institution.slots_per_day || 8,
+    lunch_slot: institution.lunch_slot || 4,
     teachers: teacherConfig,
     subjects: subjectConfig,
     rooms: roomConfig,

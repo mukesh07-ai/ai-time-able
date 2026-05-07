@@ -33,6 +33,14 @@ export const authApi = {
   me: () => api.get('/auth/me').then(r => r.data),
 };
 
+// ── Users ──────────────────────────────────────────────────────────────────────
+export const usersApi = {
+  getAll: () => api.get('/users').then(r => r.data),
+  addTeacher: (data) => api.post('/users/add-teacher', data).then(r => r.data),
+  addStudent: (data) => api.post('/users/add-student', data).then(r => r.data),
+  delete: (id) => api.delete(`/users/${id}`).then(r => r.data),
+};
+
 // ── Teachers ──────────────────────────────────────────────────────────────────
 export const teachersApi = {
   getAll: (params) => api.get('/teachers', { params }).then(r => r.data),
@@ -69,6 +77,8 @@ export const timetablesApi = {
   getGrid: (id) => api.get(`/timetables/${id}/grid`).then(r => r.data),
   create: (data) => api.post('/timetables', data).then(r => r.data),
   generate: (data) => api.post('/timetables/generate', data).then(r => r.data),
+  regenerate: (id) => api.post(`/timetables/${id}/regenerate`).then(r => r.data),
+  delete: (id) => api.delete(`/timetables/${id}`).then(r => r.data),
   applyFix: (id, data) => api.post(`/timetables/${id}/apply-fix`, data).then(r => r.data),
   publish: (id) => api.put(`/timetables/${id}/publish`).then(r => r.data),
   exportUrl: (id, format) => `${API_URL}/timetables/${id}/export?format=${format}`,
@@ -88,9 +98,29 @@ export const chatbotApi = {
   getQuickQuestions: (institutionId) => api.get(`/chatbot/quick-questions/${institutionId}`).then(r => r.data),
 };
 
-// ── Dashboard ─────────────────────────────────────────────────────────────────
+// ── Departments ───────────────────────────────────────────────────────────────
+export const departmentsApi = {
+  getAll: () => api.get('/departments').then(r => r.data),
+  setup: (data) => api.post('/departments/setup', data).then(r => r.data),
+  update: (id, data) => api.put(`/departments/${id}`, data).then(r => r.data),
+  delete: (id) => api.delete(`/departments/${id}`).then(r => r.data),
+};
+
 export const dashboardApi = {
   getStats: () => api.get('/dashboard/stats').then(r => r.data),
+};
+
+// ── Leave Management ──────────────────────────────────────────────────────────
+export const leaveApi = {
+  // Teacher
+  submit: (data) => api.post('/leave/submit', data).then(r => r.data),
+  getMyLeaves: () => api.get('/leave/my').then(r => r.data),
+  getMyTimetable: () => api.get('/leave/my-timetable').then(r => r.data),
+  // Admin
+  getAll: (params) => api.get('/leave', { params }).then(r => r.data),
+  getSummary: () => api.get('/leave/summary').then(r => r.data),
+  review: (id, data) => api.put(`/leave/${id}/review`, data).then(r => r.data),
+  delete: (id) => api.delete(`/leave/${id}`).then(r => r.data),
 };
 
 export default api;

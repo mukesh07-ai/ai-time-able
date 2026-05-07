@@ -87,6 +87,10 @@ const getGrid = async (req, res, next) => {
 const generate = async (req, res, next) => {
   try {
     const { name, academic_year, semester, naturalLanguageInput, timetableId } = req.body;
+    // Sanitize UUID fields — empty strings '' break MySQL UUID columns
+    const department_id = req.body.department_id || null;
+    const course_id     = req.body.course_id     || null;
+    const semester_id   = req.body.semester_id   || null;
 
     let timetable;
     if (timetableId) {
@@ -97,6 +101,9 @@ const generate = async (req, res, next) => {
         name: name || `AI Timetable ${new Date().toLocaleDateString()}`,
         academic_year: academic_year || new Date().getFullYear() + '-' + (new Date().getFullYear() + 1),
         semester: semester || 'Semester 1',
+        department_id,
+        course_id,
+        semester_id,
         institution_id: req.user.institution_id,
         created_by: req.user.id,
         status: 'draft',
@@ -158,4 +165,30 @@ const exportTimetable = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-module.exports = { getAll, create, getOne, getGrid, generate, applyFix, publish, exportTimetable };
+const deleteTimetable = async (req, res, next) => {
+  try {
+    const timetable = await Timetable.findOne({ where: { id: req.params.id, institution_id: req.user.institution_id } });
+    if (!timetable) return res.status(404).json({ error: 'Timetable not found' });
+    await TimetableEntry.destroy({ where: { timetable_id: timetable.id } });
+    await ConflictLog.destroy({ where: { timetable_id: timetable.id } });
+    await timetable.destroy();
+    res.json({ message: 'Timetable deleted successfully' });
+  } catch (err) { next(err); }
+};
+
+const regenerate = async (req, res, next) => {
+  try {
+    const timetable = await Timetable.findOne({ where: { id: req.params.id, institution_id: req.user.institution_id } });
+    if (!timetable) return res.status(404).json({ error: 'Timetable not found' });
+    // Clear existing entries
+    await TimetableEntry.destroy({ where: { timetable_id: timetable.id } });
+    await ConflictLog.destroy({ where: { timetable_id: timetable.id } });
+    await timetable.update({ status: 'draft', generation_log: null, solver_time_ms: null });
+    // Restart async generation
+    generateTimetable(timetable.id, req.user.institution_id, null, req.user.id)
+      .catch(err => console.error('Regeneration error:', err));
+    res.json({ message: 'Regeneration started', timetableId: timetable.id });
+  } catch (err) { next(err); }
+};
+
+module.exports = { getAll, create, getOne, getGrid, generate, applyFix, publish, exportTimetable, deleteTimetable, regenerate };

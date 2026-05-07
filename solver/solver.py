@@ -47,12 +47,18 @@ class TimetableSolver:
                 teachers_for_s = self.teachers[:1] if self.teachers else []
 
             # Find eligible rooms
+            dedicated_room = subject.get('dedicated_room_id')
             if requires_lab:
                 rooms_for_s = [r for r in self.rooms if r.get('is_lab', False)]
                 if not rooms_for_s:
-                    rooms_for_s = self.rooms  # fallback
+                    rooms_for_s = self.rooms
+            elif dedicated_room:
+                # If a dedicated room is set, prioritize it (or force it)
+                rooms_for_s = [r for r in self.rooms if r['id'] == dedicated_room]
+                if not rooms_for_s:
+                    rooms_for_s = self.rooms
             else:
-                rooms_for_s = self.rooms  # any room works
+                rooms_for_s = self.rooms
 
             for teacher in teachers_for_s:
                 t_id = teacher['id']
