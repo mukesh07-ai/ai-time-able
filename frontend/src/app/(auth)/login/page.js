@@ -1,0 +1,151 @@
+'use client';
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { motion } from 'framer-motion';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import toast from 'react-hot-toast';
+import { Brain, Mail, Lock, User, Building, Eye, EyeOff, Sparkles } from 'lucide-react';
+import { authApi } from '@/lib/api';
+import useAuthStore from '@/lib/auth';
+
+const loginSchema = z.object({
+  email: z.string().email('Valid email required'),
+  password: z.string().min(6, 'Password must be at least 6 characters'),
+});
+
+const registerSchema = z.object({
+  name: z.string().min(2, 'Name required'),
+  email: z.string().email('Valid email required'),
+  password: z.string().min(6, 'Minimum 6 characters'),
+  institutionName: z.string().min(2, 'Institution name required'),
+});
+
+export default function LoginPage() {
+  const [mode, setMode] = useState('login');
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const router = useRouter();
+  const { login } = useAuthStore();
+
+  const schema = mode === 'login' ? loginSchema : registerSchema;
+  const { register, handleSubmit, formState: { errors } } = useForm({ resolver: zodResolver(schema) });
+
+  const onSubmit = async (data) => {
+    setLoading(true);
+    try {
+      const result = mode === 'login'
+        ? await authApi.login(data)
+        : await authApi.register(data);
+      login(result.token, result.user, result.institution);
+      toast.success(mode === 'login' ? 'Welcome back! 🎉' : 'Account created! 🚀');
+      router.push('/dashboard');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Something went wrong');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-bg flex items-center justify-center relative overflow-hidden">
+      {/* Background gradient orbs */}
+      <div className="absolute top-0 left-1/4 w-96 h-96 bg-primary/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-purple/10 rounded-full blur-3xl pointer-events-none" />
+
+      <motion.div
+        initial={{ opacity: 0, y: 30 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+        className="w-full max-w-md mx-4"
+      >
+        {/* Logo */}
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-primary to-purple mb-4 shadow-lg shadow-primary/30">
+            <Brain className="w-8 h-8 text-white" />
+          </div>
+          <h1 className="font-outfit text-2xl font-bold text-text-primary">PS4 AI Timetable</h1>
+          <p className="text-text-secondary text-sm mt-1">Powered by Claude AI + OR-Tools</p>
+        </div>
+
+        {/* Card */}
+        <div className="card">
+          {/* Tab switcher */}
+          <div className="flex bg-elevated rounded-xl p-1 mb-6">
+            {['login', 'register'].map((m) => (
+              <button key={m} onClick={() => setMode(m)}
+                className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${mode === m ? 'bg-primary text-white shadow-lg' : 'text-text-secondary hover:text-text-primary'}`}>
+                {m === 'login' ? 'Sign In' : 'Create Account'}
+              </button>
+            ))}
+          </div>
+
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+            {mode === 'register' && (
+              <>
+                <div>
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-secondary" />
+                    <input {...register('name')} className="input-field pl-10" placeholder="Your Name" />
+                  </div>
+                  {errors.name && <p className="text-danger text-xs mt-1">{errors.name.message}</p>}
+                </div>
+                <div>
+                  <div className="relative">
+                    <Building className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-secondary" />
+                    <input {...register('institutionName')} className="input-field pl-10" placeholder="Institution / School Name" />
+                  </div>
+                  {errors.institutionName && <p className="text-danger text-xs mt-1">{errors.institutionName.message}</p>}
+                </div>
+              </>
+            )}
+
+            <div>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-secondary" />
+                <input {...register('email')} type="email" className="input-field pl-10" placeholder="Email address" />
+              </div>
+              {errors.email && <p className="text-danger text-xs mt-1">{errors.email.message}</p>}
+            </div>
+
+            <div>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-secondary" />
+                <input {...register('password')} type={showPassword ? 'text' : 'password'} className="input-field pl-10 pr-10" placeholder="Password" />
+                <button type="button" onClick={() => setShowPassword(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary hover:text-text-primary">
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              {errors.password && <p className="text-danger text-xs mt-1">{errors.password.message}</p>}
+            </div>
+
+            <button type="submit" disabled={loading} className="btn-primary w-full flex items-center justify-center gap-2 py-3">
+              {loading ? (
+                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4" />
+                  {mode === 'login' ? 'Sign In' : 'Create Account'}
+                </>
+              )}
+            </button>
+          </form>
+
+          {mode === 'login' && (
+            <div className="mt-4 p-3 bg-elevated rounded-xl border border-border">
+              <p className="text-text-secondary text-xs text-center">
+                Demo: <span className="text-primary">admin@school.com</span> / <span className="text-primary">admin123</span>
+              </p>
+            </div>
+          )}
+        </div>
+
+        <p className="text-center text-text-secondary text-xs mt-6">
+          PS4 Hackathon 2024 • AI-Powered Scheduling
+        </p>
+      </motion.div>
+    </div>
+  );
+}
