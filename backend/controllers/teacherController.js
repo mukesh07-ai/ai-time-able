@@ -52,6 +52,8 @@ const create = async (req, res, next) => {
 
     if (subject_ids && subject_ids.length > 0) {
       await Promise.all(subject_ids.map(sid => TeacherSubject.upsert({ teacher_id: teacher.id, subject_id: sid })));
+      // Also update the primary teacher_id in Subject table for these subjects
+      await Subject.update({ teacher_id: teacher.id }, { where: { id: { [Op.in]: subject_ids } } });
     }
 
     const full = await Teacher.findByPk(teacher.id, {
@@ -99,6 +101,8 @@ const update = async (req, res, next) => {
       await TeacherSubject.destroy({ where: { teacher_id: teacher.id } });
       if (subject_ids.length > 0) {
         await Promise.all(subject_ids.map(sid => TeacherSubject.upsert({ teacher_id: teacher.id, subject_id: sid })));
+        // Also update the primary teacher_id in Subject table for these subjects
+        await Subject.update({ teacher_id: teacher.id }, { where: { id: { [Op.in]: subject_ids } } });
       }
     }
     const full = await Teacher.findByPk(teacher.id, {
@@ -150,6 +154,8 @@ const assignSubjects = async (req, res, next) => {
     await TeacherSubject.destroy({ where: { teacher_id: teacher.id } });
     if (subject_ids && subject_ids.length > 0) {
       await Promise.all(subject_ids.map(sid => TeacherSubject.upsert({ teacher_id: teacher.id, subject_id: sid })));
+      // Also update the primary teacher_id in Subject table for these subjects
+      await Subject.update({ teacher_id: teacher.id }, { where: { id: { [Op.in]: subject_ids } } });
     }
     res.json({ message: 'Subjects assigned', count: subject_ids ? subject_ids.length : 0 });
   } catch (err) { next(err); }

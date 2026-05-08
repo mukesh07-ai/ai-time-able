@@ -32,7 +32,14 @@ export default function TeacherPortalPage() {
   const qc = useQueryClient();
   const [activeTab, setActiveTab] = useState('timetable');
   const [showLeaveForm, setShowLeaveForm] = useState(false);
-  const [leaveForm, setLeaveForm] = useState({ from_date: '', to_date: '', reason: '', leave_type: 'casual' });
+  const [leaveForm, setLeaveForm] = useState({ 
+    from_date: '', 
+    to_date: '', 
+    reason: '', 
+    leave_type: 'casual',
+    request_type: 'full_day',
+    slots: [] 
+  });
 
   const { data: timetableData, isLoading: ttLoading } = useQuery({
     queryKey: ['my-timetable'],
@@ -50,7 +57,14 @@ export default function TeacherPortalPage() {
       toast.success('Leave request submitted successfully!');
       qc.invalidateQueries({ queryKey: ['my-leaves'] });
       setShowLeaveForm(false);
-      setLeaveForm({ from_date: '', to_date: '', reason: '', leave_type: 'casual' });
+      setLeaveForm({ 
+        from_date: '', 
+        to_date: '', 
+        reason: '', 
+        leave_type: 'casual',
+        request_type: 'full_day',
+        slots: []
+      });
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Submission failed'),
   });
@@ -200,28 +214,86 @@ export default function TeacherPortalPage() {
                     <h3 className="font-outfit font-bold text-text-primary text-sm flex items-center gap-2">
                       <Send className="w-4 h-4 text-primary" /> New Leave Request
                     </h3>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-[10px] font-bold text-text-secondary uppercase tracking-widest mb-1.5 block">From Date *</label>
-                        <input type="date" value={leaveForm.from_date}
-                          onChange={e => setLeaveForm(p => ({ ...p, from_date: e.target.value }))}
-                          className="input-field py-2.5 w-full" />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-bold text-text-secondary uppercase tracking-widest mb-1.5 block">To Date *</label>
-                        <input type="date" value={leaveForm.to_date}
-                          onChange={e => setLeaveForm(p => ({ ...p, to_date: e.target.value }))}
-                          className="input-field py-2.5 w-full" />
+
+                    {/* Leave Level Selector */}
+                    <div>
+                      <label className="text-[10px] font-bold text-text-secondary uppercase tracking-widest mb-2 block">Leave Level</label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {[
+                          { id: 'full_day', label: 'Full Day', icon: Calendar },
+                          { id: 'partial_day', label: 'Partial Day', icon: Clock },
+                          { id: 'multi_day', label: 'Multi-Day', icon: Layers },
+                        ].map(type => (
+                          <button key={type.id} onClick={() => {
+                            setLeaveForm(p => ({ 
+                              ...p, 
+                              request_type: type.id,
+                              to_date: type.id !== 'multi_day' ? p.from_date : p.to_date,
+                              slots: type.id === 'partial_day' ? p.slots : []
+                            }));
+                          }}
+                            className={`flex flex-col items-center gap-1.5 p-2.5 rounded-xl border transition-all ${leaveForm.request_type === type.id ? 'bg-primary/20 border-primary/30 text-primary' : 'bg-surface/50 border-border text-text-secondary hover:border-white/20'}`}>
+                            <type.icon className="w-4 h-4" />
+                            <span className="text-[10px] font-bold">{type.label}</span>
+                          </button>
+                        ))}
                       </div>
                     </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-text-secondary uppercase tracking-widest mb-1.5 block">Leave Type</label>
-                      <select value={leaveForm.leave_type} onChange={e => setLeaveForm(p => ({ ...p, leave_type: e.target.value }))}
-                        className="input-field py-2.5 w-full">
-                        {['casual', 'medical', 'personal', 'other'].map(t => (
-                          <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>
-                        ))}
-                      </select>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[10px] font-bold text-text-secondary uppercase tracking-widest mb-1.5 block">
+                          {leaveForm.request_type === 'multi_day' ? 'Start Date *' : 'Date *'}
+                        </label>
+                        <input type="date" value={leaveForm.from_date}
+                          onChange={e => {
+                            const d = e.target.value;
+                            setLeaveForm(p => ({ 
+                              ...p, 
+                              from_date: d, 
+                              to_date: p.request_type !== 'multi_day' ? d : p.to_date 
+                            }));
+                          }}
+                          className="input-field py-2.5 w-full" />
+                      </div>
+                      {leaveForm.request_type === 'multi_day' && (
+                        <div>
+                          <label className="text-[10px] font-bold text-text-secondary uppercase tracking-widest mb-1.5 block">End Date *</label>
+                          <input type="date" value={leaveForm.to_date}
+                            onChange={e => setLeaveForm(p => ({ ...p, to_date: e.target.value }))}
+                            className="input-field py-2.5 w-full" />
+                        </div>
+                      )}
+                      {leaveForm.request_type === 'partial_day' && (
+                        <div className="col-span-2">
+                          <label className="text-[10px] font-bold text-text-secondary uppercase tracking-widest mb-2 block">Select Period(s) *</label>
+                          <div className="grid grid-cols-4 gap-2">
+                            {Array.from({ length: 8 }, (_, i) => (
+                              <button key={i} onClick={() => {
+                                const newSlots = leaveForm.slots.includes(i)
+                                  ? leaveForm.slots.filter(s => s !== i)
+                                  : [...leaveForm.slots, i].sort((a,b) => a-b);
+                                setLeaveForm(p => ({ ...p, slots: newSlots }));
+                              }}
+                                className={`py-1.5 rounded-lg border text-[10px] font-bold transition-all ${leaveForm.slots.includes(i) ? 'bg-primary text-white border-primary' : 'bg-surface border-border text-text-secondary hover:border-primary/50'}`}>
+                                Period {i + 1}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="col-span-2">
+                        <label className="text-[10px] font-bold text-text-secondary uppercase tracking-widest mb-1.5 block">Leave Type</label>
+                        <select value={leaveForm.leave_type} onChange={e => setLeaveForm(p => ({ ...p, leave_type: e.target.value }))}
+                          className="input-field py-2.5 w-full">
+                          {['casual', 'medical', 'personal', 'other'].map(t => (
+                            <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
                     <div>
                       <label className="text-[10px] font-bold text-text-secondary uppercase tracking-widest mb-1.5 block">Reason *</label>
@@ -230,7 +302,13 @@ export default function TeacherPortalPage() {
                         placeholder="Please describe the reason for your leave..." />
                     </div>
                     <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-                      disabled={!leaveForm.from_date || !leaveForm.to_date || !leaveForm.reason || submitMutation.isPending}
+                      disabled={
+                        !leaveForm.from_date || 
+                        !leaveForm.to_date || 
+                        !leaveForm.reason || 
+                        (leaveForm.request_type === 'partial_day' && leaveForm.slots.length === 0) ||
+                        submitMutation.isPending
+                      }
                       onClick={() => submitMutation.mutate(leaveForm)}
                       className="btn-primary w-full flex items-center justify-center gap-2 py-3 disabled:opacity-40 disabled:cursor-not-allowed">
                       <Send className="w-4 h-4" />
@@ -259,12 +337,17 @@ export default function TeacherPortalPage() {
                   <div className="flex-1 space-y-2">
                     <div className="flex items-center gap-2 flex-wrap">
                       <StatusBadge status={leave.status} />
-                      <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/5 text-text-secondary border border-white/8">
-                        {leave.leave_type}
+                      <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+                        {leave.request_type?.replace('_', ' ')}
                       </span>
                       <span className="text-[10px] text-text-secondary">
                         {new Date(leave.from_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                        {leave.from_date !== leave.to_date && ` → ${new Date(leave.to_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`}
+                        {leave.request_type === 'multi_day' && ` → ${new Date(leave.to_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`}
+                        {leave.request_type === 'partial_day' && leave.slots && (
+                          <span className="ml-2 text-primary font-bold">
+                            (Periods: {leave.slots.map(s => s + 1).join(', ')})
+                          </span>
+                        )}
                       </span>
                     </div>
                     <p className="text-xs text-text-secondary leading-relaxed">

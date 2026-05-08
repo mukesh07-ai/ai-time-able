@@ -82,6 +82,7 @@ export const timetablesApi = {
   applyFix: (id, data) => api.post(`/timetables/${id}/apply-fix`, data).then(r => r.data),
   publish: (id) => api.put(`/timetables/${id}/publish`).then(r => r.data),
   exportUrl: (id, format) => `${API_URL}/timetables/${id}/export?format=${format}`,
+  updateEntry: (id, data) => api.post(`/timetables/${id}/entries`, data).then(r => r.data),
 };
 
 // ── Upload ────────────────────────────────────────────────────────────────────

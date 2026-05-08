@@ -108,7 +108,10 @@ export default function TimetablePage() {
 
       <div className="flex-1 flex gap-4 overflow-hidden">
         <div className="flex-1 overflow-auto">
-          <TimetableGrid gridData={gridData} />
+          <TimetableGrid 
+            gridData={gridData} 
+            onUpdate={() => timetablesApi.getGrid(id).then(setGridData)}
+          />
         </div>
         {showImprovements && (
           <div className="w-80 flex-shrink-0">

@@ -21,11 +21,14 @@ function SubjectDrawer({ subject, onClose, onSave }) {
   
   // Data for dropdowns
   const { data: depts } = useQuery({ queryKey: ['departments'], queryFn: () => departmentsApi.getAll() });
+  const { data: teachersData } = useQuery({ queryKey: ['teachers'], queryFn: () => teachersApi.getAll({ limit: 100 }) });
+  const teachers = teachersData?.teachers || [];
 
   const { register, handleSubmit, formState: { errors }, watch, setValue } = useForm({
     defaultValues: subject || {
       name: '', code: '', credits: 4, type: 'theory',
       department_id: '', course_id: '', semester_id: '',
+      teacher_id: '',
       color_hex: SUBJECT_COLORS[0],
     },
   });
@@ -33,6 +36,7 @@ function SubjectDrawer({ subject, onClose, onSave }) {
   const selectedDeptId = watch('department_id');
   const selectedCourseId = watch('course_id');
   const selectedSemId = watch('semester_id');
+  const selectedTeacherId = watch('teacher_id');
 
   // Filtered Options
   const selectedDept = depts?.find(d => d.id === selectedDeptId);
@@ -149,6 +153,28 @@ function SubjectDrawer({ subject, onClose, onSave }) {
                 </label>
               ))}
             </div>
+          </div>
+        </div>
+
+        {/* Teacher Assignment */}
+        <div className="space-y-4">
+          <div className="flex items-center gap-2 mb-2">
+            <User className="w-3.5 h-3.5 text-text-secondary" />
+            <span className="text-[10px] font-bold text-text-secondary uppercase tracking-widest">Faculty Assignment</span>
+          </div>
+
+          <div>
+            <label className="text-xs text-text-secondary mb-1.5 block ml-1">Assigned Teacher</label>
+            <Select 
+              options={teachers.map(t => ({ value: t.id, label: t.name }))}
+              value={selectedTeacherId}
+              onChange={(val) => setValue('teacher_id', val)}
+              placeholder="Select Teacher (Optional)"
+            />
+            <input type="hidden" {...register('teacher_id')} />
+            <p className="text-[10px] text-text-secondary mt-2 flex items-center gap-1.5 ml-1">
+              <Info className="w-3 h-3" /> Link a teacher now to prevent scheduling conflicts later.
+            </p>
           </div>
         </div>
 
@@ -293,6 +319,20 @@ export default function SubjectsPage() {
                       <div className="text-[10px] text-text-secondary uppercase tracking-widest font-bold leading-none mb-1">Context</div>
                       <div className="text-xs text-text-primary font-medium truncate">
                         {subject.department?.name || 'Global'} • {subject.course?.name || 'N/A'} • {subject.semester?.name || 'N/A'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-primary/5 border border-primary/10 flex items-center justify-center text-primary">
+                      <User className="w-4 h-4" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[10px] text-text-secondary uppercase tracking-widest font-bold leading-none mb-1">Faculty</div>
+                      <div className="text-xs text-text-primary font-medium truncate">
+                        {subject.assignedTeacher?.name || (
+                          <span className="text-text-secondary italic">No teacher assigned</span>
+                        )}
                       </div>
                     </div>
                   </div>

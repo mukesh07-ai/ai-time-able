@@ -140,8 +140,11 @@ export default function AdminLeavePage() {
                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${TYPE_COLORS[leave.leave_type] || TYPE_COLORS.other}`}>
                           {leave.leave_type}
                         </span>
+                        <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+                          {leave.request_type?.replace('_', ' ')}
+                        </span>
                         <span className="text-[10px] text-text-secondary bg-white/5 px-2 py-0.5 rounded-full">
-                          {daysBetween(leave.from_date, leave.to_date)}
+                          {leave.request_type === 'partial_day' ? 'Partial Day' : daysBetween(leave.from_date, leave.to_date)}
                         </span>
                       </div>
 
@@ -161,9 +164,19 @@ export default function AdminLeavePage() {
                         <span className="flex items-center gap-1">
                           <Calendar className="w-3 h-3" />
                           {new Date(leave.from_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-                          {' → '}
-                          {new Date(leave.to_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                          {leave.request_type === 'multi_day' && (
+                            <>
+                              {' → '}
+                              {new Date(leave.to_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                            </>
+                          )}
                         </span>
+                        {leave.request_type === 'partial_day' && leave.slots && (
+                          <span className="flex items-center gap-1 text-primary font-bold">
+                            <Clock className="w-3 h-3" />
+                            Periods: {leave.slots.map(s => s + 1).join(', ')}
+                          </span>
+                        )}
                       </div>
 
                       <p className="mt-2 text-xs text-text-secondary bg-white/3 border border-white/5 rounded-lg px-3 py-2 leading-relaxed">

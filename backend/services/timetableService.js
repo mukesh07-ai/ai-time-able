@@ -235,14 +235,20 @@ async function buildSolverConfig(institutionId, timetableId) {
   console.log(`[Config] Filter: dept=${timetable.department_id} course=${timetable.course_id} sem=${timetable.semester_id}`);
   console.log(`[Config] Found ${subjects.length} subjects: ${subjects.map(s => s.name).join(', ')}`);
 
-  // ── 2. Get teachers linked to these subjects via TeacherSubject junction ──
+  // ── 2. Get teachers linked to these subjects ──
   let teachers = [];
   if (subjectIds.length > 0) {
-    // Find teacher IDs from junction table
+    // Collect teacher IDs from two sources:
+    // a) Junction table (TeacherSubject)
+    // b) Direct link (Subject.teacher_id)
     const teacherSubjectLinks = await TeacherSubject.findAll({
       where: { subject_id: { [Op.in]: subjectIds } },
     });
-    const teacherIds = [...new Set(teacherSubjectLinks.map(ts => ts.teacher_id))];
+    
+    const directTeacherIds = subjects.map(s => s.teacher_id).filter(id => id !== null);
+    const junctionTeacherIds = teacherSubjectLinks.map(ts => ts.teacher_id);
+    
+    const teacherIds = [...new Set([...directTeacherIds, ...junctionTeacherIds])];
 
     if (teacherIds.length > 0) {
       teachers = await Teacher.findAll({
@@ -252,8 +258,12 @@ async function buildSolverConfig(institutionId, timetableId) {
 
       // Attach their filtered subject_ids (only subjects in this semester)
       for (const teacher of teachers) {
-        const links = teacherSubjectLinks.filter(ts => ts.teacher_id === teacher.id);
-        teacher._subjectIds = links.map(l => l.subject_id).filter(id => subjectIds.includes(id));
+        // Collect subject IDs from junction links
+        const junctionLinks = teacherSubjectLinks.filter(ts => ts.teacher_id === teacher.id).map(l => l.subject_id);
+        // Collect subject IDs from direct links
+        const directLinks = subjects.filter(s => s.teacher_id === teacher.id).map(s => s.id);
+        
+        teacher._subjectIds = [...new Set([...junctionLinks, ...directLinks])].filter(id => subjectIds.includes(id));
       }
     }
   }

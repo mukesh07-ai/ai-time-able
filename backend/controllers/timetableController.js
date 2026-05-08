@@ -191,4 +191,43 @@ const regenerate = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-module.exports = { getAll, create, getOne, getGrid, generate, applyFix, publish, exportTimetable, deleteTimetable, regenerate };
+const updateEntry = async (req, res, next) => {
+  try {
+    const { id: timetable_id } = req.params;
+    const { day_of_week, slot_number, student_group, teacher_id, subject_id, room_id } = req.body;
+
+    const timetable = await Timetable.findOne({ where: { id: timetable_id, institution_id: req.user.institution_id } });
+    if (!timetable) return res.status(404).json({ error: 'Timetable not found' });
+
+    // Using upsert logic with unique constraints in mind
+    // First, try to find an existing entry for this specific slot/group
+    const entry = await TimetableEntry.findOne({
+      where: { timetable_id, day_of_week, slot_number, student_group }
+    });
+
+    if (entry) {
+      if (!subject_id && !teacher_id && !room_id) {
+        // If everything is null, delete the entry
+        await entry.destroy();
+        return res.json({ message: 'Entry removed' });
+      }
+      await entry.update({ teacher_id, subject_id, room_id, is_free_period: !subject_id });
+      res.json({ message: 'Entry updated', entry });
+    } else {
+      if (!subject_id && !teacher_id && !room_id) return res.json({ message: 'Nothing to create' });
+      const newEntry = await TimetableEntry.create({
+        timetable_id, day_of_week, slot_number, student_group,
+        teacher_id, subject_id, room_id,
+        is_free_period: !subject_id
+      });
+      res.status(201).json({ message: 'Entry created', entry: newEntry });
+    }
+  } catch (err) {
+    if (err.name === 'SequelizeUniqueConstraintError') {
+      return res.status(400).json({ error: 'Conflict: Teacher or Room already occupied at this time.' });
+    }
+    next(err);
+  }
+};
+
+module.exports = { getAll, create, getOne, getGrid, generate, applyFix, publish, exportTimetable, deleteTimetable, regenerate, updateEntry };

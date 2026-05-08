@@ -9,6 +9,8 @@ const LeaveRequest = sequelize.define('LeaveRequest', {
   to_date:     { type: DataTypes.DATEONLY, allowNull: false },
   reason:      { type: DataTypes.TEXT, allowNull: false },
   leave_type:  { type: DataTypes.ENUM('casual', 'medical', 'personal', 'other'), defaultValue: 'casual' },
+  request_type: { type: DataTypes.ENUM('full_day', 'partial_day', 'multi_day'), defaultValue: 'full_day' },
+  slots:       { type: DataTypes.JSON, allowNull: true }, // [0, 1, 2] for partial day
   status:      { type: DataTypes.ENUM('pending', 'approved', 'rejected'), defaultValue: 'pending' },
   admin_note:  { type: DataTypes.TEXT, allowNull: true },
   reviewed_by: { type: DataTypes.UUID, allowNull: true },

@@ -19,12 +19,6 @@ function TeacherDrawer({ teacher, subjects, onClose, onSave }) {
       return acc;
     }, {}) || {}
   );
-  const [selectedSubjects, setSelectedSubjects] = useState(teacher?.subjects?.map(s => s.id) || []);
-  
-  // Cascading Filter State for Subject Selection
-  const [filterDept, setFilterDept] = useState('');
-  const [filterCourse, setFilterCourse] = useState('');
-  const [filterSem, setFilterSem] = useState('');
 
   // Fetch Departments for dropdowns
   const { data: depts } = useQuery({ queryKey: ['departments'], queryFn: () => departmentsApi.getAll() });
@@ -40,23 +34,6 @@ function TeacherDrawer({ teacher, subjects, onClose, onSave }) {
 
   const selectedDeptId = watch('department_id');
 
-  // Logic for filtered options
-  const deptData = depts?.find(d => d.id === filterDept);
-  const filteredCourses = deptData?.courses || [];
-  const courseData = filteredCourses?.find(c => c.id === filterCourse);
-  const filteredSems = courseData?.semesters || [];
-
-  // Filtered Subjects based on selection
-  const displayedSubjects = useMemo(() => {
-    if (!filterDept && !filterCourse && !filterSem) return subjects;
-    return subjects.filter(s => {
-      const matchDept = !filterDept || s.department_id === filterDept;
-      const matchCourse = !filterCourse || s.course_id === filterCourse;
-      const matchSem = !filterSem || s.semester_id === filterSem;
-      return matchDept && matchCourse && matchSem;
-    });
-  }, [subjects, filterDept, filterCourse, filterSem]);
-
   const onSubmit = async (data) => {
     const availabilityArray = [];
     for (let d = 0; d < 6; d++) {
@@ -64,7 +41,7 @@ function TeacherDrawer({ teacher, subjects, onClose, onSave }) {
         availabilityArray.push({ day_of_week: d, slot_number: s, is_available: availability[`${d}_${s}`] !== false });
       }
     }
-    await onSave({ ...data, subject_ids: selectedSubjects, availability: availabilityArray });
+    await onSave({ ...data, availability: availabilityArray });
   };
 
   const toggleSlot = (d, s) => {
@@ -132,87 +109,7 @@ function TeacherDrawer({ teacher, subjects, onClose, onSave }) {
           </div>
         </div>
 
-        {/* Subject Assignment Section with Cascading Dropdowns */}
-        <div className="space-y-4 p-5 rounded-[24px] bg-primary/5 border border-primary/10">
-          <div className="flex items-center gap-2 mb-2">
-            <BookOpen className="w-4 h-4 text-primary" />
-            <span className="text-[10px] font-bold text-primary uppercase tracking-widest">Assign Subjects (Filtered Selection)</span>
-          </div>
 
-          <div className="grid grid-cols-1 gap-3">
-            <div>
-              <label className="text-[9px] font-bold text-text-secondary uppercase tracking-tighter mb-1 block ml-1">Filter by Department</label>
-              <Select 
-                options={depts?.map(d => ({ value: d.id, label: d.name }))}
-                value={filterDept}
-                onChange={(val) => { setFilterDept(val); setFilterCourse(''); setFilterSem(''); }}
-                placeholder="Choose Department"
-              />
-            </div>
-            
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-[9px] font-bold text-text-secondary uppercase tracking-tighter mb-1 block ml-1">Filter by Course</label>
-                <Select 
-                  disabled={!filterDept}
-                  options={filteredCourses.map(c => ({ value: c.id, label: c.name }))}
-                  value={filterCourse}
-                  onChange={(val) => { setFilterCourse(val); setFilterSem(''); }}
-                  placeholder="Choose Course"
-                />
-              </div>
-              <div>
-                <label className="text-[9px] font-bold text-text-secondary uppercase tracking-tighter mb-1 block ml-1">Filter by Semester</label>
-                <Select 
-                  disabled={!filterCourse}
-                  options={filteredSems.map(s => ({ value: s.id, label: s.name }))}
-                  value={filterSem}
-                  onChange={(val) => setFilterSem(val)}
-                  placeholder="Choose Semester"
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="pt-4 border-t border-primary/10">
-            <label className="text-[9px] font-bold text-text-secondary uppercase tracking-tighter mb-3 block ml-1">Available Subjects</label>
-            <div className="flex flex-wrap gap-2 min-h-[60px]">
-              {displayedSubjects.length === 0 ? (
-                <p className="text-[10px] text-text-secondary italic text-center w-full py-4 bg-white/5 rounded-xl border border-dashed border-white/10">
-                  No subjects match your current filters.
-                </p>
-              ) : (
-                displayedSubjects.map(s => (
-                  <button key={s.id} type="button"
-                    onClick={() => setSelectedSubjects(prev => prev.includes(s.id) ? prev.filter(x => x !== s.id) : [...prev, s.id])}
-                    className={`text-[10px] font-bold px-3 py-1.5 rounded-xl border transition-all ${selectedSubjects.includes(s.id) ? 'bg-primary/20 border-primary/40 text-primary shadow-lg shadow-primary/10' : 'bg-surface border-border text-text-secondary hover:border-white/20'}`}>
-                    {s.name}
-                  </button>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Selected Subjects Overview */}
-        {selectedSubjects.length > 0 && (
-          <div className="p-4 rounded-2xl bg-success/5 border border-success/10">
-            <label className="text-[10px] font-bold text-success uppercase tracking-widest mb-2 block">Teacher's Load ({selectedSubjects.length} Subjects)</label>
-            <div className="flex flex-wrap gap-2">
-              {selectedSubjects.map(sid => {
-                const s = subjects.find(x => x.id === sid);
-                return (
-                  <div key={sid} className="flex items-center gap-2 bg-success/10 text-success text-[10px] font-bold px-2 py-1 rounded-lg border border-success/20">
-                    {s?.name || 'Loading...'}
-                    <button type="button" onClick={() => setSelectedSubjects(prev => prev.filter(x => x !== sid))} className="hover:text-white transition-colors">
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
 
         {/* Availability grid */}
         <div className="space-y-4">
@@ -453,12 +350,7 @@ export default function ConstraintsPage() {
                       </div>
                     </div>
                   </div>
-                  <div className="flex flex-wrap gap-1.5 mb-3">
-                    {teacher.subjects?.map(s => (
-                      <span key={s.id} className="text-[9px] font-bold px-2 py-0.5 rounded-lg bg-primary/5 text-primary border border-primary/10 uppercase tracking-tighter">{s.name}</span>
-                    ))}
-                    {teacher.subjects?.length === 0 && <span className="text-[9px] text-text-secondary italic">No subjects assigned</span>}
-                  </div>
+
                   <div className="flex items-center gap-4 text-[10px] font-medium text-text-secondary bg-white/5 w-fit px-3 py-1 rounded-full">
                     <span className="flex items-center gap-1"><Clock className="w-3 h-3 opacity-50" /> {teacher.max_periods_per_day}/Day</span>
                     <span className="w-1 h-1 rounded-full bg-white/20" />

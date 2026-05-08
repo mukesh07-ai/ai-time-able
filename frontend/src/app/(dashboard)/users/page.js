@@ -13,13 +13,7 @@ const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 function UserDrawer({ mode, onClose, onSave }) {
   const [availability, setAvailability] = useState({});
-  const [selectedSubjects, setSelectedSubjects] = useState([]);
   const generatePass = () => Math.random().toString(36).slice(-8) + Math.floor(Math.random() * 100);
-  
-  // Cascading Filter State
-  const [filterDept, setFilterDept] = useState('');
-  const [filterCourse, setFilterCourse] = useState('');
-  const [filterSem, setFilterSem] = useState('');
 
   // Fetch Data
   const { data: depts } = useQuery({ 
@@ -27,13 +21,6 @@ function UserDrawer({ mode, onClose, onSave }) {
     queryFn: () => departmentsApi.getAll(),
     enabled: mode === 'teacher'
   });
-
-  const { data: subjectsData } = useQuery({
-    queryKey: ['subjects'],
-    queryFn: () => subjectsApi.getAll({ limit: 500 }),
-    enabled: mode === 'teacher'
-  });
-  const subjects = subjectsData?.subjects || [];
 
   const { register, handleSubmit, formState: { errors }, watch, setValue } = useForm({
     defaultValues: { 
@@ -43,22 +30,6 @@ function UserDrawer({ mode, onClose, onSave }) {
   });
 
   const selectedDeptId = watch('department_id');
-
-  // Filter Logic
-  const deptData = depts?.find(d => d.id === filterDept);
-  const filteredCourses = deptData?.courses || [];
-  const courseData = filteredCourses?.find(c => c.id === filterCourse);
-  const filteredSems = courseData?.semesters || [];
-
-  const displayedSubjects = useMemo(() => {
-    if (!filterDept && !filterCourse && !filterSem) return subjects;
-    return subjects.filter(s => {
-      const matchDept = !filterDept || s.department_id === filterDept;
-      const matchCourse = !filterCourse || s.course_id === filterCourse;
-      const matchSem = !filterSem || s.semester_id === filterSem;
-      return matchDept && matchCourse && matchSem;
-    });
-  }, [subjects, filterDept, filterCourse, filterSem]);
 
   const toggleSlot = (d, s) => {
     const key = `${d}_${s}`;
@@ -73,7 +44,7 @@ function UserDrawer({ mode, onClose, onSave }) {
           availabilityArray.push({ day_of_week: d, slot_number: s, is_available: availability[`${d}_${s}`] !== false });
         }
       }
-      onSave({ ...data, availability: availabilityArray, subject_ids: selectedSubjects });
+      onSave({ ...data, availability: availabilityArray });
     } else {
       onSave(data);
     }
@@ -134,50 +105,7 @@ function UserDrawer({ mode, onClose, onSave }) {
 
         {mode === 'teacher' && (
           <>
-            {/* Cascading Subject Assignment */}
-            <div className="space-y-4 p-5 rounded-[24px] bg-primary/5 border border-primary/10">
-              <div className="flex items-center gap-2 mb-2">
-                <BookOpen className="w-4 h-4 text-primary" />
-                <span className="text-[10px] font-bold text-primary uppercase tracking-widest">Assign Subjects</span>
-              </div>
 
-              <div className="grid grid-cols-1 gap-3">
-                <Select 
-                  options={depts?.map(d => ({ value: d.id, label: d.name }))}
-                  value={filterDept}
-                  onChange={(val) => { setFilterDept(val); setFilterCourse(''); setFilterSem(''); }}
-                  placeholder="Filter Department"
-                />
-                <div className="grid grid-cols-2 gap-3">
-                  <Select 
-                    disabled={!filterDept}
-                    options={filteredCourses.map(c => ({ value: c.id, label: c.name }))}
-                    value={filterCourse}
-                    onChange={(val) => { setFilterCourse(val); setFilterSem(''); }}
-                    placeholder="Filter Course"
-                  />
-                  <Select 
-                    disabled={!filterCourse}
-                    options={filteredSems.map(s => ({ value: s.id, label: s.name }))}
-                    value={filterSem}
-                    onChange={(val) => setFilterSem(val)}
-                    placeholder="Filter Semester"
-                  />
-                </div>
-              </div>
-
-              <div className="pt-4 border-t border-primary/10">
-                <div className="flex flex-wrap gap-2">
-                  {displayedSubjects.map(s => (
-                    <button key={s.id} type="button"
-                      onClick={() => setSelectedSubjects(prev => prev.includes(s.id) ? prev.filter(x => x !== s.id) : [...prev, s.id])}
-                      className={`text-[9px] font-bold px-2.5 py-1.5 rounded-xl border transition-all ${selectedSubjects.includes(s.id) ? 'bg-primary/20 border-primary/40 text-primary' : 'bg-surface border-border text-text-secondary'}`}>
-                      {s.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
 
             {/* Teaching Availability */}
             <div className="space-y-4 pt-4 border-t border-border/50">

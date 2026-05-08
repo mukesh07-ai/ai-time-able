@@ -1,4 +1,4 @@
-const { Subject, Teacher, Department, Course, Semester } = require('../models');
+const { Subject, Teacher, Department, Course, Semester, TeacherSubject } = require('../models');
 const { Op } = require('sequelize');
 
 const getAll = async (req, res, next) => {
@@ -31,12 +31,20 @@ const create = async (req, res, next) => {
     const colors = ['#4F8EF7','#10B981','#F59E0B','#8B5CF6','#EF4444','#06B6D4','#F97316','#84CC16','#EC4899','#6366F1'];
     const count = await Subject.count({ where: { institution_id: req.user.institution_id } });
     
-    // credits mapping to periods_per_week if necessary, but we renamed to credits in model
     const subject = await Subject.create({
       ...req.body,
       institution_id: req.user.institution_id,
       color_hex: req.body.color_hex || colors[count % colors.length],
     });
+
+    // Link teacher in TeacherSubject junction table for solver compatibility
+    if (req.body.teacher_id) {
+      await TeacherSubject.create({
+        teacher_id: req.body.teacher_id,
+        subject_id: subject.id
+      });
+    }
+
     res.status(201).json(subject);
   } catch (err) { next(err); }
 };
@@ -61,7 +69,25 @@ const update = async (req, res, next) => {
   try {
     const subject = await Subject.findOne({ where: { id: req.params.id, institution_id: req.user.institution_id } });
     if (!subject) return res.status(404).json({ error: 'Subject not found' });
+    
+    const oldTeacherId = subject.teacher_id;
     await subject.update(req.body);
+
+    // Sync TeacherSubject junction table
+    if (req.body.teacher_id !== undefined && req.body.teacher_id !== oldTeacherId) {
+      // Remove old link if it existed
+      if (oldTeacherId) {
+        await TeacherSubject.destroy({ where: { teacher_id: oldTeacherId, subject_id: subject.id } });
+      }
+      // Create new link if teacher_id is not null
+      if (req.body.teacher_id) {
+        await TeacherSubject.upsert({
+          teacher_id: req.body.teacher_id,
+          subject_id: subject.id
+        });
+      }
+    }
+
     res.json(subject);
   } catch (err) { next(err); }
 };

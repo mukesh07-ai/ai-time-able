@@ -7,7 +7,7 @@ const submitLeave = async (req, res, next) => {
     const teacher = await Teacher.findOne({ where: { user_id: req.user.id } });
     if (!teacher) return res.status(403).json({ error: 'Teacher profile not found for this user' });
 
-    const { from_date, to_date, reason, leave_type } = req.body;
+    const { from_date, to_date, reason, leave_type, request_type, slots } = req.body;
     if (!from_date || !to_date || !reason)
       return res.status(400).json({ error: 'from_date, to_date, and reason are required' });
 
@@ -16,6 +16,8 @@ const submitLeave = async (req, res, next) => {
       institution_id: teacher.institution_id,
       from_date, to_date, reason,
       leave_type: leave_type || 'casual',
+      request_type: request_type || 'full_day',
+      slots: request_type === 'partial_day' ? slots : null,
       status: 'pending',
     });
     res.status(201).json(leave);

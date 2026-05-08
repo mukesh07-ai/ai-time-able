@@ -17,7 +17,7 @@ function generateSlotTimings(startTime, duration, count) {
   return timings;
 }
 
-function TimetableCell({ entry, isLunch }) {
+function TimetableCell({ entry, isLunch, onClick }) {
   const [hovered, setHovered] = useState(false);
 
   if (isLunch) {
@@ -29,14 +29,20 @@ function TimetableCell({ entry, isLunch }) {
   }
 
   if (!entry) {
-    return <td className="px-2 py-2 border border-border/20"><div className="h-14 rounded border border-dashed border-white/5" /></td>;
+    return (
+      <td className="px-1 py-1 border border-border/20 cursor-pointer group" onClick={onClick}>
+        <div className="h-14 rounded-lg border border-dashed border-white/10 group-hover:border-primary/40 group-hover:bg-primary/5 transition-all flex items-center justify-center">
+          <div className="w-1.5 h-1.5 rounded-full bg-white/5 group-hover:bg-primary/20" />
+        </div>
+      </td>
+    );
   }
 
   const color = entry.subject?.color_hex || '#4F8EF7';
   const bgStyle = { backgroundColor: color + '25', borderLeft: `3px solid ${color}` };
 
   return (
-    <td className="px-1 py-1 border border-border/20" onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
+    <td className="px-1 py-1 border border-border/20" onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} onClick={onClick}>
       <motion.div
         animate={{ scale: hovered ? 1.02 : 1 }}
         className="rounded-lg px-2 py-1.5 h-14 cursor-pointer transition-shadow relative overflow-hidden"
@@ -59,8 +65,14 @@ function TimetableCell({ entry, isLunch }) {
   );
 }
 
-export default function TimetableGrid({ gridData }) {
+import TimetableEntryDrawer from './TimetableEntryDrawer';
+import { AnimatePresence } from 'framer-motion';
+import { timetablesApi } from '@/lib/api';
+import toast from 'react-hot-toast';
+
+export default function TimetableGrid({ gridData, onUpdate }) {
   const [activeGroup, setActiveGroup] = useState(null);
+  const [editSlot, setEditSlot] = useState(null);
 
   if (!gridData) return null;
 
@@ -110,13 +122,32 @@ export default function TimetableGrid({ gridData }) {
                   </span>
                 </td>
                 {Array.from({ length: workingDays }, (_, d) => (
-                  <TimetableCell key={d} entry={groupGrid[d]?.[sl]} isLunch={sl === lunchSlot} />
+                  <TimetableCell key={d} entry={groupGrid[d]?.[sl]} isLunch={sl === lunchSlot} 
+                    onClick={() => sl !== lunchSlot && setEditSlot({ day: d, slot: sl, entry: groupGrid[d]?.[sl] })} />
                 ))}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      <AnimatePresence>
+        {editSlot && (
+          <TimetableEntryDrawer 
+            entry={editSlot.entry}
+            timetableId={gridData.timetable.id}
+            day={editSlot.day}
+            slot={editSlot.slot}
+            group={currentGroup}
+            onClose={() => setEditSlot(null)}
+            onSave={async (data) => {
+              await timetablesApi.updateEntry(gridData.timetable.id, data);
+              toast.success('Timetable updated');
+              if (onUpdate) onUpdate();
+            }}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

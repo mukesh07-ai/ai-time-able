@@ -13,5 +13,6 @@ router.post('/:id/apply-fix', protect, adminOnly, c.applyFix);
 router.put('/:id/publish', protect, adminOnly, c.publish);
 router.delete('/:id', protect, adminOnly, c.deleteTimetable);
 router.post('/:id/regenerate', protect, adminOnly, c.regenerate);
+router.post('/:id/entries', protect, adminOnly, c.updateEntry);
 
 module.exports = router;

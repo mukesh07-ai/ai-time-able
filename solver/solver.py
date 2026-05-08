@@ -1,5 +1,6 @@
 from ortools.sat.python import cp_model
 import time
+import math
 
 
 class TimetableSolver:
@@ -140,6 +141,43 @@ class TimetableSolver:
             if subject_vars:
                 self.model.Add(sum(subject_vars) == periods)
 
+        # ── Soft Constraints (minimize penalties) ─────────────────────────────
+        penalty_terms = []
+
+        # S1: Compactness & Early Bias — push classes to early slots and early days
+        # This naturally leaves evenings and weekends vacant as requested.
+        for (t_id, s_id, r_id, day, slot), var in vars.items():
+            # Penalty increases with slot number and day number.
+            # slot weight: 1, day weight: 5 (prioritize early day more)
+            penalty_terms.append(var * (slot + day * 5))
+
+        # H6: Subject daily limit — ensure a subject appears at most once per day per group
+        # This prevents the solver from bunching classes on a single day.
+        for subject in self.subjects:
+            s_id = subject['id']
+            periods = subject.get('periods_per_week', 4)
+            
+            # Calculate the strict minimum slots needed per day.
+            # Usually 1, but if credits > working_days, we allow the necessary minimum.
+            # We apply this to ALL subjects (theory and lab) to ensure spreading.
+            limit = math.ceil(periods / self.working_days) if self.working_days > 0 else 1
+            
+            for day in range(self.working_days):
+                # Gather all potential teacher/room variables for this subject on this day
+                day_subject_vars = [
+                    var for (tid, sid, rid, d, s), var in vars.items() 
+                    if sid == s_id and d == day
+                ]
+                if day_subject_vars:
+                    # sum of all possible slots for this subject on this day must be <= limit
+                    self.model.Add(sum(day_subject_vars) <= limit)
+                    
+                    # Soft constraint: Prefer even less if possible
+                    if limit > 1:
+                        penalty_vars = self.model.NewBoolVar(f'pen_{s_id[:4]}_{day}')
+                        self.model.Add(sum(day_subject_vars) <= 1).OnlyEnforceIf(penalty_vars.Not())
+                        penalty_terms.append(penalty_vars)
+
         # H5: Teacher max daily load
         for teacher in self.teachers:
             t_id = teacher['id']
@@ -152,10 +190,9 @@ class TimetableSolver:
                 if day_vars:
                     self.model.Add(sum(day_vars) <= max_daily)
 
-        # ── Soft Constraints (minimize penalties) ─────────────────────────────
-        penalty_terms = []
-
-        # Soft: Minimize teacher "window" periods (free slot between two busy slots)
+        # ── S2: Minimize "window" periods (free slots between busy slots) ─────────────────────────────
+        
+        # Teacher Windows
         for teacher in self.teachers:
             t_id = teacher['id']
             for day in range(self.working_days):
@@ -163,16 +200,15 @@ class TimetableSolver:
                     if s == self.lunch_slot or s + 1 == self.lunch_slot or s + 2 == self.lunch_slot:
                         continue
 
-                    # busy_at_s: teacher has a class at slot s
                     vars_at_s = [var for (tid, sid, rid, d, sl), var in vars.items() if tid == t_id and d == day and sl == s]
                     vars_at_s2 = [var for (tid, sid, rid, d, sl), var in vars.items() if tid == t_id and d == day and sl == s + 2]
                     vars_at_s1 = [var for (tid, sid, rid, d, sl), var in vars.items() if tid == t_id and d == day and sl == s + 1]
 
                     if vars_at_s and vars_at_s2 and vars_at_s1:
-                        busy_s = self.model.NewBoolVar(f'busy_{t_id[:4]}_{day}_{s}')
-                        busy_s2 = self.model.NewBoolVar(f'busy_{t_id[:4]}_{day}_{s+2}')
-                        free_s1 = self.model.NewBoolVar(f'free_{t_id[:4]}_{day}_{s+1}')
-                        window = self.model.NewBoolVar(f'win_{t_id[:4]}_{day}_{s}')
+                        busy_s = self.model.NewBoolVar(f't_busy_{t_id[:4]}_{day}_{s}')
+                        busy_s2 = self.model.NewBoolVar(f't_busy_{t_id[:4]}_{day}_{s+2}')
+                        free_s1 = self.model.NewBoolVar(f't_free_{t_id[:4]}_{day}_{s+1}')
+                        window = self.model.NewBoolVar(f't_win_{t_id[:4]}_{day}_{s}')
 
                         self.model.Add(sum(vars_at_s) >= 1).OnlyEnforceIf(busy_s)
                         self.model.Add(sum(vars_at_s) == 0).OnlyEnforceIf(busy_s.Not())
@@ -182,9 +218,35 @@ class TimetableSolver:
                         self.model.Add(sum(vars_at_s1) >= 1).OnlyEnforceIf(free_s1.Not())
 
                         self.model.AddBoolAnd([busy_s, busy_s2, free_s1]).OnlyEnforceIf(window)
-                        self.model.AddBoolOr([busy_s.Not(), busy_s2.Not(), free_s1.Not()]).OnlyEnforceIf(window.Not())
+                        penalty_terms.append(window * 20)
 
-                        penalty_terms.append(window)
+        # Student Group Windows
+        for group in groups:
+            group_subject_ids = [s['id'] for s in self.subjects if s.get('student_group', 'Default') == group]
+            for day in range(self.working_days):
+                for s in range(self.slots_per_day - 2):
+                    if s == self.lunch_slot or s + 1 == self.lunch_slot or s + 2 == self.lunch_slot:
+                        continue
+
+                    vars_at_s = [var for (tid, sid, rid, d, sl), var in vars.items() if sid in group_subject_ids and d == day and sl == s]
+                    vars_at_s2 = [var for (tid, sid, rid, d, sl), var in vars.items() if sid in group_subject_ids and d == day and sl == s + 2]
+                    vars_at_s1 = [var for (tid, sid, rid, d, sl), var in vars.items() if sid in group_subject_ids and d == day and sl == s + 1]
+
+                    if vars_at_s and vars_at_s2 and vars_at_s1:
+                        busy_s = self.model.NewBoolVar(f'g_busy_{group[:4]}_{day}_{s}')
+                        busy_s2 = self.model.NewBoolVar(f'g_busy_{group[:4]}_{day}_{s+2}')
+                        free_s1 = self.model.NewBoolVar(f'g_free_{group[:4]}_{day}_{s+1}')
+                        window = self.model.NewBoolVar(f'g_win_{group[:4]}_{day}_{s}')
+
+                        self.model.Add(sum(vars_at_s) >= 1).OnlyEnforceIf(busy_s)
+                        self.model.Add(sum(vars_at_s) == 0).OnlyEnforceIf(busy_s.Not())
+                        self.model.Add(sum(vars_at_s2) >= 1).OnlyEnforceIf(busy_s2)
+                        self.model.Add(sum(vars_at_s2) == 0).OnlyEnforceIf(busy_s2.Not())
+                        self.model.Add(sum(vars_at_s1) == 0).OnlyEnforceIf(free_s1)
+                        self.model.Add(sum(vars_at_s1) >= 1).OnlyEnforceIf(free_s1.Not())
+
+                        self.model.AddBoolAnd([busy_s, busy_s2, free_s1]).OnlyEnforceIf(window)
+                        penalty_terms.append(window * 20)
 
         # Minimize total penalty
         if penalty_terms:
